@@ -210,29 +210,22 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) { /* hex invalide : on garde l'icone NFC */ }
         }
 
-        val matiereAffichee = listOfNotNull(info.matiere, info.sousType?.takeIf { it.isNotBlank() }).joinToString(" ")
-        ajouterLigneInfo(R.drawable.ic_materiau, matiereAffichee.ifBlank { "Matière inconnue" })
+        // Matiere et date de fabrication pas encore localisees avec certitude (voir le commentaire
+        // en tete de DecodeurElegoo.kt) : on ne les affiche pas plutot que d'inventer une valeur.
         info.couleurHex?.let { ajouterLigneInfo(R.drawable.ic_couleur, "Couleur : #$it") }
         info.poidsGrammes?.let { ajouterLigneInfo(R.drawable.ic_materiau, "Poids bobine : ${it}g") }
         info.diametreMm?.let { ajouterLigneInfo(R.drawable.ic_temperature, "Diamètre : ${it}mm") }
-        if (info.anneeFabrication != null && info.moisFabrication != null) {
-            ajouterLigneInfo(R.drawable.ic_temperature, "Fabriqué : %02d/%d".format(info.moisFabrication, info.anneeFabrication))
-        }
 
         val resume = StringBuilder()
-        resume.appendLine("Matière : $matiereAffichee")
         info.couleurHex?.let { resume.appendLine("Couleur : #$it") }
         info.poidsGrammes?.let { resume.appendLine("Poids : ${it}g") }
         info.diametreMm?.let { resume.appendLine("Diamètre : ${it}mm") }
-        if (info.anneeFabrication != null && info.moisFabrication != null) {
-            resume.appendLine("Fabriqué : %02d/%d".format(info.moisFabrication, info.anneeFabrication))
-        }
-        info.codeFilament?.let { resume.appendLine("Code filament : $it") }
+        info.codeFabricant?.let { resume.appendLine("Code fabricant : $it") }
         dernierResume = resume.toString().trim()
         dernierDumpTexte = dernierResume + "\n\n--- DUMP BRUT (pour analyse) ---\n" + formaterDumpHex(dump)
 
         if (GestionnaireParametres.lireVibrationFinLecture(this)) vibrerConfirmation()
-        enregistrerDansHistorique(info.codeFilament ?: "?", matiereAffichee, info.couleurHex ?: "")
+        enregistrerDansHistorique(info.codeFabricant ?: "?", info.couleurHex ?: "")
     }
 
     private fun vibrerConfirmation() {
@@ -313,10 +306,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun enregistrerDansHistorique(codeFilament: String, matiere: String, couleurHex: String) {
+    private fun enregistrerDansHistorique(codeFabricant: String, couleurHex: String) {
         try {
             val fichier = File(getExternalFilesDir(null), "historique_scans.csv")
-            val ligne = "${SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE).format(Date())};$codeFilament;$matiere;$couleurHex\n"
+            val ligne = "${SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE).format(Date())};$codeFabricant;$couleurHex\n"
             fichier.appendText(ligne)
         } catch (e: Exception) { /* pas grave si l'ecriture de l'historique echoue */ }
     }

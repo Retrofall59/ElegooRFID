@@ -1,12 +1,12 @@
 import com.tomyn.elegoorfid.DecodeurElegoo
+import java.io.File
 
 /**
- * Test du decodeur sur l'exemple NUMERIQUE COMPLET fourni par la doc officielle Elegoo
- * (section 4 du guide : PLA-CF, 1.75mm, 1000g, Rouge #FF3700, fevrier 2025).
- *
- * ATTENTION : ceci valide que le decodeur applique correctement la specification telle
- * qu'ecrite, PAS que la specification correspond a un vrai tag physique (aucun dump reel
- * disponible a ce jour). A completer des qu'une vraie bobine est scannee.
+ * Test du decodeur sur DEUX VRAIS DUMPS (PLA noir et PLA bleu Elegoo, fournis par pascal_lb sur
+ * le forum, octobre 2026) : seuls le header, le code fabricant, la couleur, le diametre et le
+ * poids sont verifies ici, car ce sont les seuls champs confirmes par comparaison des deux
+ * echantillons reels. La matiere/sous-type/date restent a confirmer (necessitent un dump d'une
+ * matiere differente).
  *
  *   kotlinc ../app/src/main/java/com/tomyn/elegoorfid/DecodeurElegoo.kt TestDecodeurElegoo.kt \
  *           -include-runtime -d test.jar
@@ -19,30 +19,29 @@ fun check(nom: String, ok: Boolean, detail: String = "") {
 }
 
 fun main() {
-    // UID factice (4 pages = 16 octets, peu importe leur valeur) + les 24 octets de l'exemple officiel
-    val uidFactice = ByteArray(16)
-    val exemple = ("36" + "EEEEEEEE" + "0001" + "504C4120" + "43463230" + "FF3700" + "00AF" + "03E8" + "09C6")
-        .let { hex -> ByteArray(hex.length / 2) { hex.substring(it * 2, it * 2 + 2).toInt(16).toByte() } }
-    val dump = uidFactice + exemple
+    val noir = DecodeurElegoo.decoder(File("dumps/pla_noir_pascal_lb.bin").readBytes())
+    val bleu = DecodeurElegoo.decoder(File("dumps/pla_bleu_pascal_lb.bin").readBytes())
 
-    val info = DecodeurElegoo.decoder(dump)
-    println("Decode : $info\n")
+    println("Noir : $noir")
+    println("Bleu : $bleu\n")
 
-    check("en-tete valide (0x36)", info.headerValide == true)
-    check("code fabricant = EE:EE:EE:EE", info.codeFabricant == "EE:EE:EE:EE", info.codeFabricant ?: "null")
-    check("matiere = PLA", info.matiere == "PLA", info.matiere ?: "null")
-    check("sous-type = CF20", info.sousType == "CF20", info.sousType ?: "null")
-    check("couleur = FF3700 (rouge)", info.couleurHex == "FF3700", info.couleurHex ?: "null")
-    check("diametre = 1.75mm", info.diametreMm == 1.75, info.diametreMm.toString())
-    check("poids = 1000g", info.poidsGrammes == 1000, info.poidsGrammes.toString())
-    check("annee fabrication = 2025", info.anneeFabrication == 2025, info.anneeFabrication.toString())
-    check("mois fabrication = 2 (fevrier)", info.moisFabrication == 2, info.moisFabrication.toString())
+    check("noir : en-tete valide", noir.headerValide == true)
+    check("noir : fabricant EE:EE:EE:EE", noir.codeFabricant == "EE:EE:EE:EE", noir.codeFabricant ?: "null")
+    check("noir : couleur #000000", noir.couleurHex == "000000", noir.couleurHex ?: "null")
+    check("noir : diametre 1.75mm", noir.diametreMm == 1.75, noir.diametreMm.toString())
+    check("noir : poids 1000g", noir.poidsGrammes == 1000, noir.poidsGrammes.toString())
 
-    // Dump tronque : ne doit jamais planter (coupe juste apres la matiere, avant le poids)
-    val tronque = DecodeurElegoo.decoder(dump.copyOfRange(0, 27))
-    check("dump tronque : pas d'erreur, matiere encore lisible", tronque.matiere == "PLA")
-    check("dump tronque : poids absent proprement (hors de portee)", tronque.poidsGrammes == null)
+    check("bleu : en-tete valide", bleu.headerValide == true)
+    check("bleu : fabricant EE:EE:EE:EE", bleu.codeFabricant == "EE:EE:EE:EE", bleu.codeFabricant ?: "null")
+    check("bleu : couleur #106DD7", bleu.couleurHex == "106DD7", bleu.couleurHex ?: "null")
+    check("bleu : diametre 1.75mm", bleu.diametreMm == 1.75, bleu.diametreMm.toString())
+    check("bleu : poids 1000g", bleu.poidsGrammes == 1000, bleu.poidsGrammes.toString())
 
-    println(if (echecs == 0) "\n=> TOUT PASSE (conforme a la doc officielle - pas encore a un vrai tag)" else "\n=> $echecs ECHEC(S)")
+    // Dump tronque : ne doit jamais planter
+    val tronque = DecodeurElegoo.decoder(File("dumps/pla_noir_pascal_lb.bin").readBytes().copyOfRange(0, 70))
+    check("dump tronque : pas d'erreur, header et fabricant encore lisibles", tronque.headerValide == true && tronque.codeFabricant != null)
+    check("dump tronque : couleur absente proprement (hors de portee)", tronque.couleurHex == null)
+
+    println(if (echecs == 0) "\n=> TOUT PASSE (verifie sur 2 vraies bobines)" else "\n=> $echecs ECHEC(S)")
     if (echecs > 0) System.exit(1)
 }
