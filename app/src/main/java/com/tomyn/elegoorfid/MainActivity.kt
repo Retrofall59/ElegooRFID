@@ -369,11 +369,18 @@ class MainActivity : AppCompatActivity() {
         r.append("NFC actif : $nfcActif\n")
         r.append("Date : ${SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE).format(Date())}\n\n")
         r.append("--- Dernier scan ---\n")
-        if (dernierResume.isEmpty()) {
+        if (dernierDumpTexte.isEmpty()) {
+            // Corrige un bug reel (remonte par pascal_lb sur le forum, premier vrai test) : avant
+            // ce correctif, ce rapport disait a tort "aucun scan effectue" apres un scan qui avait
+            // bien eu lieu mais ou l'en-tete attendu n'avait pas ete reconnu - la seule situation
+            // ou une vraie donnee de diagnostic etait justement necessaire.
             r.append("Aucun scan effectué depuis l'ouverture de l'appli.\n")
-        } else {
-            r.append(if (dernierScanReussi) "Lecture réussie\n" else "Lecture incomplète / en-tête non reconnu\n")
+        } else if (dernierScanReussi) {
+            r.append("Lecture réussie\n")
             r.append(dernierResume).append("\n")
+        } else {
+            r.append("Tag lu mais en-tête 0x36 non reconnu (voir dump brut ci-dessous)\n\n")
+            r.append(dernierDumpTexte).append("\n")
         }
         return r.toString()
     }
