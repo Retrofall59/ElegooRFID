@@ -37,11 +37,18 @@ fun main() {
     check("bleu : diametre 1.75mm", bleu.diametreMm == 1.75, bleu.diametreMm.toString())
     check("bleu : poids 1000g", bleu.poidsGrammes == 1000, bleu.poidsGrammes.toString())
 
+    val jaune = DecodeurElegoo.decoder(File("dumps/pla_jaune_pascal_lb.bin").readBytes())
+    val blanc = DecodeurElegoo.decoder(File("dumps/pla_blanc_pascal_lb.bin").readBytes())
+    check("jaune : couleur #D0C825", jaune.couleurHex == "D0C825", jaune.couleurHex ?: "null")
+    check("jaune : poids/diametre corrects", jaune.poidsGrammes == 1000 && jaune.diametreMm == 1.75)
+    check("blanc : couleur #FFFFFF", blanc.couleurHex == "FFFFFF", blanc.couleurHex ?: "null")
+    check("blanc : poids/diametre corrects", blanc.poidsGrammes == 1000 && blanc.diametreMm == 1.75)
+
     // Dump tronque : ne doit jamais planter
     val tronque = DecodeurElegoo.decoder(File("dumps/pla_noir_pascal_lb.bin").readBytes().copyOfRange(0, 70))
     check("dump tronque : pas d'erreur, header et fabricant encore lisibles", tronque.headerValide == true && tronque.codeFabricant != null)
     check("dump tronque : couleur absente proprement (hors de portee)", tronque.couleurHex == null)
 
-    println(if (echecs == 0) "\n=> TOUT PASSE (verifie sur 2 vraies bobines)" else "\n=> $echecs ECHEC(S)")
+    println(if (echecs == 0) "\n=> TOUT PASSE (verifie sur 4 vraies bobines : noir, bleu, jaune, blanc)" else "\n=> $echecs ECHEC(S)")
     if (echecs > 0) System.exit(1)
 }

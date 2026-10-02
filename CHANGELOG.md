@@ -8,6 +8,7 @@
 - **Confirmé par comparaison des deux dumps** (une seule page diffère entre les deux bobines) : couleur (RGB888 direct), poids, diamètre, code fabricant. Tous exacts.
 - **Pas encore localisé** : matière et date de fabrication. Les deux échantillons étant tous les deux du PLA, impossible de distinguer "le bon champ matière" d'un simple bloc constant sans rapport avec elle - il faudrait un dump d'une autre matière (PETG, ABS...) pour trancher par comparaison, comme pour la couleur. Ces champs ont été retirés de l'appli plutôt que d'afficher une valeur devinée et potentiellement fausse.
 - Le bandeau d'avertissement reflète maintenant précisément ce qui est confirmé et ce qui ne l'est pas, au lieu d'un simple "pas encore vérifié" général.
+- **Mise à jour (même version, pas de changement de code)** : 2 dumps réels supplémentaires (PLA jaune `#D0C825`, PLA blanc `#FFFFFF`), toujours fournis par pascal_lb. Couleur/poids/diamètre confirmés exacts sur 4 bobines au total. La matière reste non localisée : les 4 échantillons disponibles sont tous du PLA, il faudrait une autre matière (PETG, ABS...) pour trancher.
 
 ## v0.2-non-verifie (build 2)
 
