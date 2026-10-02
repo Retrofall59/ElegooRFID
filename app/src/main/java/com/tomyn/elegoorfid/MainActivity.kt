@@ -1,0 +1,437 @@
+package com.tomyn.elegoorfid
+
+import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.content.res.ColorStateList
+import android.graphics.Color
+import android.nfc.NfcAdapter
+import android.nfc.Tag
+import android.nfc.tech.NfcA
+import android.os.Build
+import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.provider.Settings
+import android.view.Gravity
+import android.view.View
+import android.view.animation.AnimationUtils
+import android.widget.Button
+import android.widget.ImageButton
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var imgNfc: ImageView
+    private lateinit var vuCouleur: View
+    private lateinit var txtStatut: TextView
+    private lateinit var layoutLignesInfo: LinearLayout
+    private lateinit var btnReglagesNfc: Button
+    private lateinit var nfcAdapter: NfcAdapter
+
+    private val dernieresLignesInfo = mutableListOf<Pair<Int, String>>()
+    private var dernierDumpTexte: String = ""
+    private var dernierResume: String = ""
+    private var dernierScanReussi = false
+    private var contenuAExporter: String? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        contenuAExporter = savedInstanceState?.getString("contenuAExporter")
+        setContentView(R.layout.activity_main)
+
+        imgNfc = findViewById(R.id.imgNfc)
+        vuCouleur = findViewById(R.id.vuCouleur)
+        txtStatut = findViewById(R.id.txtStatut)
+        layoutLignesInfo = findViewById(R.id.layoutLignesInfo)
+        btnReglagesNfc = findViewById(R.id.btnReglagesNfc)
+
+        btnReglagesNfc.setOnClickListener { ouvrirReglagesNfc() }
+        findViewById<Button>(R.id.btnExporter).setOnClickListener { exporterDump() }
+        findViewById<Button>(R.id.btnCopier).setOnClickListener { copierResume() }
+        findViewById<Button>(R.id.btnPartager).setOnClickListener { partagerResume() }
+        findViewById<Button>(R.id.btnHistorique).setOnClickListener { afficherHistorique() }
+        findViewById<Button>(R.id.btnRapportCompat).setOnClickListener { copierRapportCompatibilite() }
+        findViewById<ImageButton>(R.id.btnParametres).setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
+
+        NfcAdapter.getDefaultAdapter(this)?.let { nfcAdapter = it }
+
+        restaurerAffichageResultat(savedInstanceState)
+        traiterIntentEventuel(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!::nfcAdapter.isInitialized) return
+
+        if (!nfcAdapter.isEnabled) {
+            btnReglagesNfc.visibility = View.VISIBLE
+            txtStatut.text = "Le NFC est désactivé sur ce téléphone."
+            return
+        }
+        if (btnReglagesNfc.visibility == View.VISIBLE) {
+            btnReglagesNfc.visibility = View.GONE
+            txtStatut.text = "Approche une bobine Elegoo du dos du téléphone..."
+        }
+
+        nfcAdapter.enableReaderMode(
+            this,
+            NfcAdapter.ReaderCallback { tag -> runOnUiThread { lireTag(tag) } },
+            NfcAdapter.FLAG_READER_NFC_A,
+            null
+        )
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (::nfcAdapter.isInitialized) nfcAdapter.disableReaderMode(this)
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        traiterIntentEventuel(intent)
+    }
+
+    private fun traiterIntentEventuel(intent: android.content.Intent?) {
+        if (intent == null) return
+        if (intent.action != NfcAdapter.ACTION_TECH_DISCOVERED) return
+        @Suppress("DEPRECATION")
+        val tag = intent.getParcelableExtra<Tag>(NfcAdapter.EXTRA_TAG) ?: return
+        lireTag(tag)
+    }
+
+    private fun lireTag(tag: Tag) {
+        layoutLignesInfo.removeAllViews()
+        dernieresLignesInfo.clear()
+        vuCouleur.visibility = View.GONE
+        imgNfc.visibility = View.VISIBLE
+        txtStatut.text = "Lecture en cours..."
+
+        val nfcA = NfcA.get(tag)
+        if (nfcA == null) {
+            txtStatut.text = "Ce tag n'est pas compatible NFC-A"
+            dernierScanReussi = false
+            return
+        }
+
+        try {
+            nfcA.connect()
+            // Le decodeur a besoin jusqu'a l'octet 39 (date) : on lit large, jusqu'a la page 11
+            // (0x2C, fin de la zone documentee), par blocs de 4 pages (16 octets).
+            val tampon = ByteArrayOutputStream()
+            var page = 0
+            while (page <= 40) {
+                tampon.write(nfcA.transceive(byteArrayOf(0x30, page.toByte())))
+                page += 4
+            }
+            val dump = tampon.toByteArray()
+            val info = DecodeurElegoo.decoder(dump)
+
+            if (info.headerValide != true) {
+                txtStatut.text = "Tag lu, mais l'en-tête attendu (0x36) est absent — pas au format Elegoo reconnu, ou doc non conforme à ce tag"
+                dernierScanReussi = false
+                dernierDumpTexte = "--- DUMP BRUT ---\n${formaterDumpHex(dump)}"
+                return
+            }
+
+            afficherResultats(info, dump)
+        } catch (e: Exception) {
+            txtStatut.text = "Erreur de lecture : ${e.message}"
+            dernierScanReussi = false
+        } finally {
+            try { nfcA.close() } catch (e: Exception) { /* rien a faire */ }
+        }
+    }
+
+    private fun formaterDumpHex(dump: ByteArray): String {
+        val sb = StringBuilder()
+        for (page in dump.indices step 4) {
+            val fin = minOf(page + 4, dump.size)
+            val octets = dump.copyOfRange(page, fin).joinToString(" ") { "%02X".format(it) }
+            sb.appendLine("Page %02X : %s".format(page / 4, octets))
+        }
+        return sb.toString().trim()
+    }
+
+    private fun ajouterLigneInfo(icone: Int, texte: String) {
+        dernieresLignesInfo.add(icone to texte)
+        val ligne = LinearLayout(this)
+        ligne.orientation = LinearLayout.HORIZONTAL
+        ligne.gravity = Gravity.CENTER_VERTICAL
+        val paddingPx = (6 * resources.displayMetrics.density).toInt()
+        ligne.setPadding(0, paddingPx, 0, paddingPx)
+
+        val img = ImageView(this)
+        img.setImageResource(icone)
+        val tailleIcone = (20 * resources.displayMetrics.density).toInt()
+        val paramsImg = LinearLayout.LayoutParams(tailleIcone, tailleIcone)
+        paramsImg.marginEnd = (10 * resources.displayMetrics.density).toInt()
+        img.layoutParams = paramsImg
+
+        val txt = TextView(this)
+        txt.text = texte
+        txt.setTextColor(resources.getColor(R.color.texte_principal, theme))
+        txt.textSize = 14f
+
+        ligne.addView(img)
+        ligne.addView(txt)
+        layoutLignesInfo.addView(ligne)
+
+        val animation = AnimationUtils.loadAnimation(this, R.anim.apparition_ligne)
+        animation.startOffset = (layoutLignesInfo.childCount - 1) * 90L
+        ligne.startAnimation(animation)
+    }
+
+    private fun afficherResultats(info: DecodeurElegoo.InfoBobine, dump: ByteArray) {
+        dernierScanReussi = true
+        txtStatut.text = "Bobine identifiée"
+
+        if (info.couleurHex != null) {
+            try {
+                val argb = Color.parseColor("#${info.couleurHex}")
+                vuCouleur.backgroundTintList = ColorStateList.valueOf(argb)
+                vuCouleur.visibility = View.VISIBLE
+                imgNfc.visibility = View.GONE
+            } catch (e: Exception) { /* hex invalide : on garde l'icone NFC */ }
+        }
+
+        val matiereAffichee = listOfNotNull(info.matiere, info.sousType?.takeIf { it.isNotBlank() }).joinToString(" ")
+        ajouterLigneInfo(R.drawable.ic_materiau, matiereAffichee.ifBlank { "Matière inconnue" })
+        info.couleurHex?.let { ajouterLigneInfo(R.drawable.ic_couleur, "Couleur : #$it") }
+        info.poidsGrammes?.let { ajouterLigneInfo(R.drawable.ic_materiau, "Poids bobine : ${it}g") }
+        info.diametreMm?.let { ajouterLigneInfo(R.drawable.ic_temperature, "Diamètre : ${it}mm") }
+        if (info.anneeFabrication != null && info.moisFabrication != null) {
+            ajouterLigneInfo(R.drawable.ic_temperature, "Fabriqué : %02d/%d".format(info.moisFabrication, info.anneeFabrication))
+        }
+
+        val resume = StringBuilder()
+        resume.appendLine("Matière : $matiereAffichee")
+        info.couleurHex?.let { resume.appendLine("Couleur : #$it") }
+        info.poidsGrammes?.let { resume.appendLine("Poids : ${it}g") }
+        info.diametreMm?.let { resume.appendLine("Diamètre : ${it}mm") }
+        if (info.anneeFabrication != null && info.moisFabrication != null) {
+            resume.appendLine("Fabriqué : %02d/%d".format(info.moisFabrication, info.anneeFabrication))
+        }
+        info.codeFilament?.let { resume.appendLine("Code filament : $it") }
+        dernierResume = resume.toString().trim()
+        dernierDumpTexte = dernierResume + "\n\n--- DUMP BRUT (pour analyse) ---\n" + formaterDumpHex(dump)
+
+        if (GestionnaireParametres.lireVibrationFinLecture(this)) vibrerConfirmation()
+        enregistrerDansHistorique(info.codeFilament ?: "?", matiereAffichee, info.couleurHex ?: "")
+    }
+
+    private fun vibrerConfirmation() {
+        try {
+            val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createOneShot(80, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(80)
+            }
+        } catch (e: Exception) { /* pas grave si la vibration echoue */ }
+    }
+
+    private fun copierResume() {
+        if (dernierResume.isEmpty()) {
+            Toast.makeText(this, "Rien à copier pour l'instant, scanne d'abord un tag.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Résultat Elegoo RFID", dernierResume))
+        Toast.makeText(this, "Copié dans le presse-papier.", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun partagerResume() {
+        if (dernierResume.isEmpty()) {
+            Toast.makeText(this, "Rien à partager pour l'instant, scanne d'abord un tag.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val intent = Intent(Intent.ACTION_SEND)
+        intent.type = "text/plain"
+        intent.putExtra(Intent.EXTRA_TEXT, dernierResume)
+        startActivity(Intent.createChooser(intent, "Partager le résultat"))
+    }
+
+    private fun exporterDump() {
+        if (dernierDumpTexte.isEmpty()) {
+            Toast.makeText(this, "Aucun dump à exporter pour l'instant, scanne d'abord un tag.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val nomFichier = "dump_elegoo_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(Date()) + ".txt"
+        exporterVers(nomFichier, dernierDumpTexte, "text/plain")
+    }
+
+    private fun exporterVers(nomSuggere: String, contenu: String, typeMime: String) {
+        contenuAExporter = contenu
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = typeMime
+            putExtra(Intent.EXTRA_TITLE, nomSuggere)
+        }
+        try {
+            startActivityForResult(intent, CODE_EXPORT)
+        } catch (e: Exception) {
+            contenuAExporter = null
+            Toast.makeText(this, "Impossible d'ouvrir le sélecteur de fichiers : ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != CODE_EXPORT) return
+        val contenu = contenuAExporter
+        contenuAExporter = null
+        val uri = data?.data
+        if (resultCode != RESULT_OK || uri == null) return
+        if (contenu == null) {
+            Toast.makeText(this, "Export interrompu (l'appli a été relancée), recommence.", Toast.LENGTH_LONG).show()
+            return
+        }
+        try {
+            val flux = contentResolver.openOutputStream(uri) ?: throw IOException("fichier inaccessible")
+            flux.use { it.write(contenu.toByteArray(Charsets.UTF_8)) }
+            Toast.makeText(this, "Fichier enregistré.", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Erreur export : ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun enregistrerDansHistorique(codeFilament: String, matiere: String, couleurHex: String) {
+        try {
+            val fichier = File(getExternalFilesDir(null), "historique_scans.csv")
+            val ligne = "${SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE).format(Date())};$codeFilament;$matiere;$couleurHex\n"
+            fichier.appendText(ligne)
+        } catch (e: Exception) { /* pas grave si l'ecriture de l'historique echoue */ }
+    }
+
+    private fun afficherHistorique() {
+        try {
+            val fichier = File(getExternalFilesDir(null), "historique_scans.csv")
+            if (!fichier.exists() || fichier.readText().isBlank()) {
+                AlertDialog.Builder(this)
+                    .setTitle("Historique des scans")
+                    .setMessage("Aucun scan enregistré pour l'instant.")
+                    .setPositiveButton("OK", null)
+                    .show()
+                return
+            }
+            val lignes = fichier.readLines().reversed()
+            val texteAffiche = lignes.joinToString("\n\n") { ligne ->
+                val parts = ligne.split(";")
+                if (parts.size >= 3) "${parts[0]}\n${parts[2]}" else ligne
+            }
+            AlertDialog.Builder(this)
+                .setTitle("Historique des scans (${lignes.size})")
+                .setMessage(texteAffiche)
+                .setPositiveButton("Fermer", null)
+                .setNeutralButton("Exporter") { _, _ -> exporterVers("historique_scans_elegoo.csv", fichier.readText(), "text/csv") }
+                .setNegativeButton("Vider l'historique") { _, _ ->
+                    fichier.delete()
+                    Toast.makeText(this, "Historique effacé.", Toast.LENGTH_SHORT).show()
+                }
+                .show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Erreur lecture historique : ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun construireRapportCompatibilite(): String {
+        val versionAppli = try {
+            val infoPaquet = packageManager.getPackageInfo(packageName, 0)
+            @Suppress("DEPRECATION")
+            val build = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) infoPaquet.longVersionCode else infoPaquet.versionCode.toLong()
+            "${infoPaquet.versionName} (build $build)"
+        } catch (e: Exception) { "?" }
+        val nfcActif = if (::nfcAdapter.isInitialized) (if (nfcAdapter.isEnabled) "oui" else "non") else "pas de puce NFC"
+
+        val r = StringBuilder()
+        r.append("=== Rapport de compatibilité - ElegooRFID (décodeur non encore validé sur un vrai tag) ===\n")
+        r.append("Appli : v$versionAppli\n")
+        r.append("Téléphone : ${Build.MANUFACTURER} ${Build.MODEL}\n")
+        r.append("Android : ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})\n")
+        r.append("NFC actif : $nfcActif\n")
+        r.append("Date : ${SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE).format(Date())}\n\n")
+        r.append("--- Dernier scan ---\n")
+        if (dernierResume.isEmpty()) {
+            r.append("Aucun scan effectué depuis l'ouverture de l'appli.\n")
+        } else {
+            r.append(if (dernierScanReussi) "Lecture réussie\n" else "Lecture incomplète / en-tête non reconnu\n")
+            r.append(dernierResume).append("\n")
+        }
+        return r.toString()
+    }
+
+    private fun copierRapportCompatibilite() {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Rapport compatibilité ElegooRFID", construireRapportCompatibilite()))
+        Toast.makeText(this, "Rapport copié : colle-le sur le forum.", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun ouvrirReglagesNfc() {
+        try {
+            startActivity(Intent(Settings.ACTION_NFC_SETTINGS))
+        } catch (e: Exception) {
+            try {
+                startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS))
+            } catch (e2: Exception) {
+                Toast.makeText(this, "Impossible d'ouvrir les réglages NFC.", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        contenuAExporter?.let { outState.putString("contenuAExporter", it) }
+        outState.putString("dernierDumpTexte", dernierDumpTexte)
+        outState.putString("dernierResume", dernierResume)
+        outState.putBoolean("dernierScanReussi", dernierScanReussi)
+        outState.putString("txtStatutTexte", txtStatut.text.toString())
+        val couleurVisible = vuCouleur.visibility == View.VISIBLE
+        outState.putBoolean("vuCouleurVisible", couleurVisible)
+        if (couleurVisible) outState.putInt("vuCouleurArgb", vuCouleur.backgroundTintList?.defaultColor ?: Color.TRANSPARENT)
+        outState.putIntArray("lignesInfoIcones", dernieresLignesInfo.map { it.first }.toIntArray())
+        outState.putStringArray("lignesInfoTextes", dernieresLignesInfo.map { it.second }.toTypedArray())
+    }
+
+    private fun restaurerAffichageResultat(savedInstanceState: Bundle?) {
+        if (savedInstanceState == null) return
+        savedInstanceState.getString("dernierDumpTexte")?.let { dernierDumpTexte = it }
+        savedInstanceState.getString("dernierResume")?.let { dernierResume = it }
+        dernierScanReussi = savedInstanceState.getBoolean("dernierScanReussi")
+        savedInstanceState.getString("txtStatutTexte")?.let { txtStatut.text = it }
+
+        if (savedInstanceState.getBoolean("vuCouleurVisible")) {
+            vuCouleur.backgroundTintList = ColorStateList.valueOf(savedInstanceState.getInt("vuCouleurArgb"))
+            vuCouleur.visibility = View.VISIBLE
+            imgNfc.visibility = View.GONE
+        } else {
+            vuCouleur.visibility = View.GONE
+            imgNfc.visibility = View.VISIBLE
+        }
+
+        val icones = savedInstanceState.getIntArray("lignesInfoIcones") ?: IntArray(0)
+        val textes = savedInstanceState.getStringArray("lignesInfoTextes") ?: emptyArray()
+        for (i in icones.indices) ajouterLigneInfo(icones[i], textes.getOrElse(i) { "" })
+    }
+
+    companion object {
+        const val CODE_EXPORT = 4711
+    }
+}

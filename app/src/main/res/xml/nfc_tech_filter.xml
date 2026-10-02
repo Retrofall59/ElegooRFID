@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+    <!-- Deux blocs separes = "NfcA seul suffit, OU MifareUltralight seul suffit" (un seul bloc
+         exigerait les deux a la fois, ce qui a cause un vrai bug sur AnycubicRFID : un tag non
+         classe MifareUltralight par le systeme, malgre un comportement Ultralight reel). -->
+    <tech-list>
+        <tech>android.nfc.tech.NfcA</tech>
+    </tech-list>
+    <tech-list>
+        <tech>android.nfc.tech.MifareUltralight</tech>
+    </tech-list>
+</resources>
