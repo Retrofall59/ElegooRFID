@@ -7,4 +7,5 @@
     <color name="texte_principal">#1A1A1A</color>
     <color name="texte_secondaire">#5C5C5C</color>
     <color name="bordure_legere">#E2E2E2</color>
+    <color name="rouge_attention">#C62828</color>
 </resources>

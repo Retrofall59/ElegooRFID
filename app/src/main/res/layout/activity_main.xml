@@ -227,6 +227,21 @@
             android:textAllCaps="false"
             android:textSize="13sp" />
 
+        <!-- Effacement : disponible a tout moment (pas besoin d'avoir scanne une bobine valide
+             au prealable, contrairement au clonage) - utile pour reinitialiser un tag deja
+             ecrit (test precedent, ou ancien clonage) avant de le recloner proprement. Couleur
+             d'avertissement : action destructrice et irreversible. -->
+        <Button
+            android:id="@+id/btnEffacer"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/fond_bouton_secondaire"
+            android:text="Effacer un tag"
+            android:textColor="@color/rouge_attention"
+            android:textAllCaps="false"
+            android:textSize="13sp" />
+
     </LinearLayout>
 
 </ScrollView>

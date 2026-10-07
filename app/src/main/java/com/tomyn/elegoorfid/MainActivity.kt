@@ -41,6 +41,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnReglagesNfc: Button
     private lateinit var btnCloner: Button
     private lateinit var btnAnnulerClonage: Button
+    private lateinit var btnEffacer: Button
     private lateinit var nfcAdapter: NfcAdapter
 
     private val dernieresLignesInfo = mutableListOf<Pair<Int, String>>()
@@ -55,6 +56,11 @@ class MainActivity : AppCompatActivity() {
     private var enAttenteTagCible = false
     private var ecrasementConfirme = false
 
+    // --- Effacement : voir ClonageElegoo.kt (pagesAEffacer/zoneEffacee) - meme plage de pages
+    // que le clonage, jamais 0x28+. Contrairement au clonage, ne depend d'aucune lecture
+    // prealable : disponible des le lancement de l'appli. ---
+    private var enAttenteTagEffacement = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         contenuAExporter = savedInstanceState?.getString("contenuAExporter")
@@ -68,10 +74,12 @@ class MainActivity : AppCompatActivity() {
 
         btnCloner = findViewById(R.id.btnCloner)
         btnAnnulerClonage = findViewById(R.id.btnAnnulerClonage)
+        btnEffacer = findViewById(R.id.btnEffacer)
 
         btnReglagesNfc.setOnClickListener { ouvrirReglagesNfc() }
         btnCloner.setOnClickListener { demarrerModeClonage() }
-        btnAnnulerClonage.setOnClickListener { annulerModeClonage() }
+        btnAnnulerClonage.setOnClickListener { annulerModeAttente() }
+        btnEffacer.setOnClickListener { demarrerModeEffacement() }
         findViewById<Button>(R.id.btnExporter).setOnClickListener { exporterDump() }
         findViewById<Button>(R.id.btnCopier).setOnClickListener { copierResume() }
         findViewById<Button>(R.id.btnPartager).setOnClickListener { partagerResume() }
@@ -131,6 +139,10 @@ class MainActivity : AppCompatActivity() {
     private fun lireTag(tag: Tag) {
         if (enAttenteTagCible) {
             traiterTagCibleClonage(tag)
+            return
+        }
+        if (enAttenteTagEffacement) {
+            effacerTagCible(tag)
             return
         }
 
@@ -194,7 +206,9 @@ class MainActivity : AppCompatActivity() {
         }
         enAttenteTagCible = true
         btnCloner.visibility = View.GONE
+        btnEffacer.visibility = View.GONE
         btnAnnulerClonage.visibility = View.VISIBLE
+        btnAnnulerClonage.text = "Annuler le clonage"
         layoutLignesInfo.removeAllViews()
         dernieresLignesInfo.clear()
         vuCouleur.visibility = View.GONE
@@ -202,12 +216,88 @@ class MainActivity : AppCompatActivity() {
         txtStatut.text = "Approche maintenant la bobine VIERGE à écrire (NTAG213/215)..."
     }
 
-    private fun annulerModeClonage() {
+    /**
+     * Effacement (ajoute le 08/10/2026) : remet a zero la zone de donnees (0x03-0x27, voir
+     * ClonageElegoo) d'un tag quelconque - independant de toute lecture prealable, contrairement
+     * au clonage. Utile pour reinitialiser un tag deja ecrit (test precedent, ancien clonage)
+     * sans dependre d'un outil externe (NFC Tools) dont l'effacement generique s'est revele
+     * incomplet dans ce cas precis sur retour terrain (pascal_lb, forum, 08/10/2026).
+     */
+    private fun demarrerModeEffacement() {
+        AlertDialog.Builder(this)
+            .setTitle("Effacer un tag")
+            .setMessage("Le prochain tag approché sera entièrement effacé (données produit remises à zéro), que ce soit une bobine Elegoo, un clone, ou un tag de test. Irréversible. Continuer ?")
+            .setPositiveButton("Approcher un tag") { _, _ ->
+                enAttenteTagEffacement = true
+                btnCloner.visibility = View.GONE
+                btnEffacer.visibility = View.GONE
+                btnAnnulerClonage.visibility = View.VISIBLE
+                btnAnnulerClonage.text = "Annuler l'effacement"
+                layoutLignesInfo.removeAllViews()
+                dernieresLignesInfo.clear()
+                vuCouleur.visibility = View.GONE
+                imgNfc.visibility = View.VISIBLE
+                txtStatut.text = "Approche maintenant le tag à effacer..."
+            }
+            .setNegativeButton("Annuler", null)
+            .show()
+    }
+
+    private fun effacerTagCible(tag: Tag) {
+        val nfcA = NfcA.get(tag)
+        if (nfcA == null) {
+            Toast.makeText(this, "Ce tag n'est pas compatible NFC-A, essaie un autre tag.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        runOnUiThread { txtStatut.text = "Effacement en cours, ne retire pas le tag..." }
+
+        try {
+            nfcA.connect()
+            for (page in ClonageElegoo.pagesAEffacer()) {
+                val o = ClonageElegoo.OCTETS_PAGE_VIDE
+                nfcA.transceive(byteArrayOf(0xA2.toByte(), page.toByte(), o[0], o[1], o[2], o[3]))
+            }
+            val dumpRelu = lireDumpBrut(nfcA, ClonageElegoo.DERNIERE_PAGE_DONNEES)
+            nfcA.close()
+
+            enAttenteTagEffacement = false
+            val reussi = ClonageElegoo.zoneEffacee(dumpRelu)
+            runOnUiThread {
+                btnAnnulerClonage.visibility = View.GONE
+                btnEffacer.visibility = View.VISIBLE
+                if (dernierScanReussi) btnCloner.visibility = View.VISIBLE
+                txtStatut.text = if (reussi) {
+                    "Tag effacé et vérifié ✓ — prêt pour un nouveau clonage"
+                } else {
+                    "Écriture terminée mais la relecture ne confirme pas un effacement complet - réessaie."
+                }
+            }
+        } catch (e: Exception) {
+            try { nfcA.close() } catch (e2: Exception) { /* rien a faire */ }
+            enAttenteTagEffacement = false
+            runOnUiThread {
+                btnAnnulerClonage.visibility = View.GONE
+                btnEffacer.visibility = View.VISIBLE
+                if (dernierScanReussi) btnCloner.visibility = View.VISIBLE
+                txtStatut.text = "Erreur d'effacement : ${e.message} — le tag est peut-être verrouillé ou n'est pas un NTAG213/215."
+            }
+        }
+    }
+
+    private fun annulerModeAttente() {
+        val effacementEnCours = enAttenteTagEffacement
         enAttenteTagCible = false
+        enAttenteTagEffacement = false
         ecrasementConfirme = false
         btnAnnulerClonage.visibility = View.GONE
+        btnEffacer.visibility = View.VISIBLE
         if (dernierScanReussi) btnCloner.visibility = View.VISIBLE
-        txtStatut.text = "Clonage annulé. Approche une bobine Elegoo du dos du téléphone..."
+        txtStatut.text = if (effacementEnCours) {
+            "Effacement annulé. Approche une bobine Elegoo du dos du téléphone..."
+        } else {
+            "Clonage annulé. Approche une bobine Elegoo du dos du téléphone..."
+        }
     }
 
     private fun traiterTagCibleClonage(tag: Tag) {
@@ -215,7 +305,7 @@ class MainActivity : AppCompatActivity() {
         if (dumpSource == null || dumpSource.size < ClonageElegoo.TAILLE_MIN_DUMP_SOURCE) {
             // Le dump source a disparu entretemps (ex. rotation d'ecran sans sauvegarde du
             // tableau d'octets) - on ne peut pas continuer en securite, on annule proprement.
-            annulerModeClonage()
+            annulerModeAttente()
             Toast.makeText(this, "Le modèle source a été perdu, relance le clonage depuis une nouvelle lecture.", Toast.LENGTH_LONG).show()
             return
         }
@@ -260,8 +350,8 @@ class MainActivity : AppCompatActivity() {
                             ecrasementConfirme = true
                             txtStatut.text = "Confirmé : rapproche à nouveau la MÊME bobine pour l'écraser..."
                         }
-                        .setNegativeButton("Annuler") { _, _ -> annulerModeClonage() }
-                        .setOnCancelListener { annulerModeClonage() }
+                        .setNegativeButton("Annuler") { _, _ -> annulerModeAttente() }
+                        .setOnCancelListener { annulerModeAttente() }
                         .show()
                 }
                 return
@@ -296,6 +386,7 @@ class MainActivity : AppCompatActivity() {
             val reussi = ClonageElegoo.zoneCloneeIdentique(dumpSource, dumpRelu)
             runOnUiThread {
                 btnAnnulerClonage.visibility = View.GONE
+                btnEffacer.visibility = View.VISIBLE
                 if (dernierScanReussi) btnCloner.visibility = View.VISIBLE
                 if (reussi) {
                     txtStatut.text = "Clonage réussi et vérifié ✓"
@@ -309,6 +400,7 @@ class MainActivity : AppCompatActivity() {
             enAttenteTagCible = false
             runOnUiThread {
                 btnAnnulerClonage.visibility = View.GONE
+                btnEffacer.visibility = View.VISIBLE
                 if (dernierScanReussi) btnCloner.visibility = View.VISIBLE
                 txtStatut.text = "Erreur d'écriture : ${e.message} — le tag cible est peut-être verrouillé ou n'est pas un NTAG213/215 vierge."
             }

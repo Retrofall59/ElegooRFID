@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.5-clonage-confirme-terrain (build 5)
+
+**Clonage confirmé fonctionnel sur vrai terrain** (pascal_lb, forum, 08/10/2026) : testé avec
+succès sur PLA jaune, noir, bleu et blanc, reconnu directement par un Canvas Elegoo comme une
+vraie bobine. Le format n'est donc pas spécifique à une référence/couleur en particulier.
+
+**Nouveau bouton "Effacer un tag"**, suite à un retour terrain du même testeur : en réessayant de
+cloner sur un tag déjà cloné par l'appli, après un effacement via NFC Tools (outil générique
+tiers), l'appli détectait encore "une bobine existante" — l'effacement de NFC Tools s'est révélé
+incomplet sur ce cas précis. Plutôt que de dépendre d'un outil externe, l'appli sait maintenant
+effacer elle-même :
+
+- Remet à zéro la même plage de pages que le clonage (0x03-0x27, voir `ClonageElegoo.kt`) — jamais
+  les pages 0x28+ de configuration de la puce, même choix de sécurité que pour le clonage.
+- Disponible à tout moment, sans dépendre d'une lecture préalable (contrairement au clonage, qui a
+  besoin d'un modèle source) : utile pour réinitialiser un tag de test ou un ancien clonage avant
+  de le recloner proprement.
+- Confirmation demandée avant d'effacer (action irréversible), puis relecture automatique de
+  vérification (toute la zone doit être retombée à zéro).
+- Vérifié par compilation réelle (kotlinc + stubs Android) : zéro erreur. Pas encore testé sur un
+  vrai tag physique.
+
 ## v0.4-clonage-non-teste-terrain (build 4)
 
 **Nouvelle fonctionnalité : clonage d'une bobine Elegoo sur un tag vierge** (NTAG213/215 du commerce, UID fixe non modifiable). Pas encore testé sur un vrai tag physique — à valider avant toute utilisation sur une bobine qui compte.

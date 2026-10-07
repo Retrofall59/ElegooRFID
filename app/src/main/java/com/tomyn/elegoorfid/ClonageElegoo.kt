@@ -65,4 +65,26 @@ object ClonageElegoo {
         val fin = (DERNIERE_PAGE_DONNEES + 1) * 4
         return dumpSource.copyOfRange(debut, fin).contentEquals(dumpCibleRelu.copyOfRange(debut, fin))
     }
+
+    /**
+     * Effacement (ajoute le 08/10/2026, suite a un retour terrain de pascal_lb sur le forum) :
+     * remet a zero la MEME plage de pages que le clonage (0x03-0x27), jamais 0x28+ - meme choix
+     * de securite que pour le clonage, voir le commentaire en tete de fichier. Utile pour
+     * reinitialiser un tag deja ecrit (ancien test, ou ancien clonage Elegoo) avant de le
+     * recloner proprement, sans dependre d'un outil externe comme NFC Tools - dont l'effacement
+     * generique s'est revele incomplet sur un tag deja clone par cette appli (un reste de l'ancien
+     * contenu suffisait pour que le decodeur le reconnaisse encore comme "bobine existante").
+     */
+    val OCTETS_PAGE_VIDE: ByteArray = byteArrayOf(0x00, 0x00, 0x00, 0x00)
+
+    /** Numeros de pages a ecrire a zero pour un effacement complet de la zone de donnees. */
+    fun pagesAEffacer(): List<Int> = (PREMIERE_PAGE_DONNEES..DERNIERE_PAGE_DONNEES).toList()
+
+    /** Confirme qu'un dump relu a bien ete entierement remis a zero sur la zone effacee. */
+    fun zoneEffacee(dumpCibleRelu: ByteArray): Boolean {
+        if (dumpCibleRelu.size < TAILLE_MIN_DUMP_SOURCE) return false
+        val debut = PREMIERE_PAGE_DONNEES * 4
+        val fin = (DERNIERE_PAGE_DONNEES + 1) * 4
+        return dumpCibleRelu.copyOfRange(debut, fin).all { it == 0.toByte() }
+    }
 }
