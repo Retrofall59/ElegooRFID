@@ -39,6 +39,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var txtStatut: TextView
     private lateinit var layoutLignesInfo: LinearLayout
     private lateinit var btnReglagesNfc: Button
+    private lateinit var btnCloner: Button
+    private lateinit var btnAnnulerClonage: Button
     private lateinit var nfcAdapter: NfcAdapter
 
     private val dernieresLignesInfo = mutableListOf<Pair<Int, String>>()
@@ -46,6 +48,12 @@ class MainActivity : AppCompatActivity() {
     private var dernierResume: String = ""
     private var dernierScanReussi = false
     private var contenuAExporter: String? = null
+
+    // --- Clonage : voir ClonageElegoo.kt pour le detail et le choix de securite (pourquoi on ne
+    // touche qu'aux pages 0x03-0x27, jamais 0x28+ qui sont de la configuration de puce). ---
+    private var dernierDumpBrut: ByteArray? = null
+    private var enAttenteTagCible = false
+    private var ecrasementConfirme = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,7 +66,12 @@ class MainActivity : AppCompatActivity() {
         layoutLignesInfo = findViewById(R.id.layoutLignesInfo)
         btnReglagesNfc = findViewById(R.id.btnReglagesNfc)
 
+        btnCloner = findViewById(R.id.btnCloner)
+        btnAnnulerClonage = findViewById(R.id.btnAnnulerClonage)
+
         btnReglagesNfc.setOnClickListener { ouvrirReglagesNfc() }
+        btnCloner.setOnClickListener { demarrerModeClonage() }
+        btnAnnulerClonage.setOnClickListener { annulerModeClonage() }
         findViewById<Button>(R.id.btnExporter).setOnClickListener { exporterDump() }
         findViewById<Button>(R.id.btnCopier).setOnClickListener { copierResume() }
         findViewById<Button>(R.id.btnPartager).setOnClickListener { partagerResume() }
@@ -116,10 +129,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun lireTag(tag: Tag) {
+        if (enAttenteTagCible) {
+            traiterTagCibleClonage(tag)
+            return
+        }
+
         layoutLignesInfo.removeAllViews()
         dernieresLignesInfo.clear()
         vuCouleur.visibility = View.GONE
         imgNfc.visibility = View.VISIBLE
+        btnCloner.visibility = View.GONE
         txtStatut.text = "Lecture en cours..."
 
         val nfcA = NfcA.get(tag)
@@ -133,13 +152,7 @@ class MainActivity : AppCompatActivity() {
             nfcA.connect()
             // Le decodeur a besoin jusqu'a l'octet 39 (date) : on lit large, jusqu'a la page 11
             // (0x2C, fin de la zone documentee), par blocs de 4 pages (16 octets).
-            val tampon = ByteArrayOutputStream()
-            var page = 0
-            while (page <= 40) {
-                tampon.write(nfcA.transceive(byteArrayOf(0x30, page.toByte())))
-                page += 4
-            }
-            val dump = tampon.toByteArray()
+            val dump = lireDumpBrut(nfcA, 40)
             val info = DecodeurElegoo.decoder(dump)
 
             if (info.headerValide != true) {
@@ -155,6 +168,150 @@ class MainActivity : AppCompatActivity() {
             dernierScanReussi = false
         } finally {
             try { nfcA.close() } catch (e: Exception) { /* rien a faire */ }
+        }
+    }
+
+    /** Lit les pages 0 a dernierePageIncluse (arrondi au multiple de 4 superieur) via READ (0x30). */
+    private fun lireDumpBrut(nfcA: NfcA, dernierePageIncluse: Int): ByteArray {
+        val tampon = ByteArrayOutputStream()
+        var page = 0
+        while (page <= dernierePageIncluse) {
+            tampon.write(nfcA.transceive(byteArrayOf(0x30, page.toByte())))
+            page += 4
+        }
+        return tampon.toByteArray()
+    }
+
+    // ============================== CLONAGE ==============================
+    // Voir ClonageElegoo.kt pour le detail des plages de pages et le raisonnement de securite
+    // (pourquoi on ne touche jamais aux pages 0x28+ de configuration de la puce).
+
+    private fun demarrerModeClonage() {
+        val source = dernierDumpBrut
+        if (source == null || source.size < ClonageElegoo.TAILLE_MIN_DUMP_SOURCE) {
+            Toast.makeText(this, "Scanne d'abord une bobine Elegoo valide avant de cloner.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        enAttenteTagCible = true
+        btnCloner.visibility = View.GONE
+        btnAnnulerClonage.visibility = View.VISIBLE
+        layoutLignesInfo.removeAllViews()
+        dernieresLignesInfo.clear()
+        vuCouleur.visibility = View.GONE
+        imgNfc.visibility = View.VISIBLE
+        txtStatut.text = "Approche maintenant la bobine VIERGE à écrire (NTAG213/215)..."
+    }
+
+    private fun annulerModeClonage() {
+        enAttenteTagCible = false
+        ecrasementConfirme = false
+        btnAnnulerClonage.visibility = View.GONE
+        if (dernierScanReussi) btnCloner.visibility = View.VISIBLE
+        txtStatut.text = "Clonage annulé. Approche une bobine Elegoo du dos du téléphone..."
+    }
+
+    private fun traiterTagCibleClonage(tag: Tag) {
+        val dumpSource = dernierDumpBrut
+        if (dumpSource == null || dumpSource.size < ClonageElegoo.TAILLE_MIN_DUMP_SOURCE) {
+            // Le dump source a disparu entretemps (ex. rotation d'ecran sans sauvegarde du
+            // tableau d'octets) - on ne peut pas continuer en securite, on annule proprement.
+            annulerModeClonage()
+            Toast.makeText(this, "Le modèle source a été perdu, relance le clonage depuis une nouvelle lecture.", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        // Ecrasement deja confirme lors d'un scan precedent de CE MEME tag (voir plus bas) :
+        // on ecrit directement, sans relire - le tag approche maintenant est celui que
+        // l'utilisateur vient de rapprocher expres apres avoir confirme la popup.
+        if (ecrasementConfirme) {
+            ecrasementConfirme = false
+            ecrireEtVerifierClone(tag, dumpSource)
+            return
+        }
+
+        val nfcA = NfcA.get(tag)
+        if (nfcA == null) {
+            Toast.makeText(this, "Ce tag n'est pas compatible NFC-A, essaie un autre tag.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        try {
+            nfcA.connect()
+            // Verifie d'abord si le tag cible contient deja des donnees Elegoo valides, pour ne
+            // jamais ecraser silencieusement une bobine originale par erreur de manipulation.
+            val dumpExistant = lireDumpBrut(nfcA, 40)
+            val infoExistante = DecodeurElegoo.decoder(dumpExistant)
+            nfcA.close()
+
+            if (infoExistante.headerValide == true) {
+                runOnUiThread {
+                    txtStatut.text = "Tag deja ecrit detecte - confirmation demandee..."
+                    AlertDialog.Builder(this)
+                        .setTitle("Ce tag contient déjà une bobine")
+                        .setMessage(
+                            "Ce tag semble être une bobine Elegoo existante" +
+                                (infoExistante.couleurHex?.let { " (couleur #$it)" } ?: "") +
+                                ", pas un tag vierge.\n\nL'écraser avec le clone effacera définitivement ses données actuelles. Continuer quand même ?"
+                        )
+                        .setPositiveButton("Écraser quand même") { _, _ ->
+                            // On ne reutilise jamais un objet Tag apres une popup (le tag a eu
+                            // le temps de quitter le champ NFC pendant la lecture de la popup) -
+                            // on redemande un scan, que le flag ci-dessus laissera passer direct.
+                            ecrasementConfirme = true
+                            txtStatut.text = "Confirmé : rapproche à nouveau la MÊME bobine pour l'écraser..."
+                        }
+                        .setNegativeButton("Annuler") { _, _ -> annulerModeClonage() }
+                        .setOnCancelListener { annulerModeClonage() }
+                        .show()
+                }
+                return
+            }
+            ecrireEtVerifierClone(tag, dumpSource)
+        } catch (e: Exception) {
+            try { nfcA.close() } catch (e2: Exception) { /* rien a faire */ }
+            runOnUiThread { txtStatut.text = "Erreur de lecture du tag cible : ${e.message}" }
+        }
+    }
+
+    /** Ecrit les pages 0x03-0x27 depuis dumpSource sur tag, puis relit pour verifier. Gere elle-meme connect/close. */
+    private fun ecrireEtVerifierClone(tag: Tag, dumpSource: ByteArray) {
+        val nfcA = NfcA.get(tag)
+        if (nfcA == null) {
+            runOnUiThread { Toast.makeText(this, "Ce tag n'est pas compatible NFC-A, essaie un autre tag.", Toast.LENGTH_SHORT).show() }
+            return
+        }
+
+        runOnUiThread { txtStatut.text = "Écriture en cours, ne retire pas le tag..." }
+
+        try {
+            nfcA.connect()
+            for ((page, octets) in ClonageElegoo.pagesAEcrire(dumpSource)) {
+                // Commande WRITE (NFC Forum Type 2 Tag) : 0xA2, numero de page, 4 octets de donnee.
+                nfcA.transceive(byteArrayOf(0xA2.toByte(), page.toByte(), octets[0], octets[1], octets[2], octets[3]))
+            }
+            val dumpRelu = lireDumpBrut(nfcA, ClonageElegoo.DERNIERE_PAGE_DONNEES)
+            nfcA.close()
+
+            enAttenteTagCible = false
+            val reussi = ClonageElegoo.zoneCloneeIdentique(dumpSource, dumpRelu)
+            runOnUiThread {
+                btnAnnulerClonage.visibility = View.GONE
+                if (dernierScanReussi) btnCloner.visibility = View.VISIBLE
+                if (reussi) {
+                    txtStatut.text = "Clonage réussi et vérifié ✓"
+                    if (GestionnaireParametres.lireVibrationFinLecture(this)) vibrerConfirmation()
+                } else {
+                    txtStatut.text = "Écriture terminée mais la relecture ne correspond pas - clonage probablement incomplet. Réessaie."
+                }
+            }
+        } catch (e: Exception) {
+            try { nfcA.close() } catch (e2: Exception) { /* rien a faire */ }
+            enAttenteTagCible = false
+            runOnUiThread {
+                btnAnnulerClonage.visibility = View.GONE
+                if (dernierScanReussi) btnCloner.visibility = View.VISIBLE
+                txtStatut.text = "Erreur d'écriture : ${e.message} — le tag cible est peut-être verrouillé ou n'est pas un NTAG213/215 vierge."
+            }
         }
     }
 
@@ -199,6 +356,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun afficherResultats(info: DecodeurElegoo.InfoBobine, dump: ByteArray) {
         dernierScanReussi = true
+        dernierDumpBrut = dump
+        btnCloner.visibility = if (dump.size >= ClonageElegoo.TAILLE_MIN_DUMP_SOURCE) View.VISIBLE else View.GONE
         txtStatut.text = "Bobine identifiée"
 
         if (info.couleurHex != null) {

@@ -136,6 +136,30 @@
         </androidx.cardview.widget.CardView>
 
         <Button
+            android:id="@+id/btnCloner"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/fond_bouton_principal"
+            android:text="Cloner sur une bobine vierge"
+            android:textColor="@color/carte_blanc"
+            android:textAllCaps="false"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/btnAnnulerClonage"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/fond_bouton_secondaire"
+            android:text="Annuler le clonage"
+            android:textColor="@color/elegoo_noir"
+            android:textAllCaps="false"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
+        <Button
             android:id="@+id/btnExporter"
             android:layout_width="match_parent"
             android:layout_height="46dp"

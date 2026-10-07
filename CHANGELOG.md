@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.4-clonage-non-teste-terrain (build 4)
+
+**Nouvelle fonctionnalité : clonage d'une bobine Elegoo sur un tag vierge** (NTAG213/215 du commerce, UID fixe non modifiable). Pas encore testé sur un vrai tag physique — à valider avant toute utilisation sur une bobine qui compte.
+
+- Nouveau bouton "Cloner sur une bobine vierge", qui apparaît après une lecture réussie. Le flux : scanner la bobine source → approcher le tag vierge à écrire → écriture → relecture automatique de vérification.
+- **Choix de sécurité important** (voir le commentaire en tête de `ClonageElegoo.kt`) : seules les pages 0x03 à 0x27 sont copiées (Capability Container + zone utilisateur libre, où vivent le code fabricant, la couleur, le poids et le diamètre). Les pages 0x28 à 0x2C (configuration de la puce : dynamic lock bytes, MIRROR/AUTH0, ACCESS, PWD, PACK) ne sont **jamais** écrites, car nos 4 échantillons réels montrent qu'Elegoo y place des octets non standards (hors zone RFUI attendue) dont le rôle exact n'est pas compris avec certitude — les copier sur un tag neuf pourrait le verrouiller de façon irréversible. Si un test réel montre que c'est insuffisant pour qu'un lecteur du commerce accepte le clone, il faudra d'abord comprendre ces pages avant d'envisager de les copier.
+- Si le tag approché pour l'écriture contient déjà une bobine Elegoo reconnue, une confirmation est demandée avant d'écraser (et le tag doit être rapproché une seconde fois après confirmation, pour éviter d'écrire sur un objet NFC qui a eu le temps de quitter le champ pendant la popup).
+- Un bouton "Annuler le clonage" permet de sortir du mode clonage à tout moment avant l'écriture.
+- Vérifiée par compilation réelle (kotlinc + stubs Android complets pour les API NFC/UI utilisées), comme pour les autres parties de l'appli — pas encore vérifiée sur un vrai tag NTAG213/215 vierge.
+
 ## v0.3-partiellement-verifie (build 3)
 
 **Décodeur réécrit à partir de 2 vraies bobines** (PLA noir et PLA bleu, dumps fournis par pascal_lb sur le forum). La doc officielle Elegoo s'est révélée fausse sur plusieurs points :
