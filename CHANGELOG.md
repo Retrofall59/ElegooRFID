@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.6-ecriture-verifiee (build 6)
+
+**Correctif** suite au retour terrain de pascal_lb (08/10/2026) : effacer un tag déjà cloné par
+l'appli affichait "la relecture ne confirme pas un effacement complet", alors que le tag était
+bien devenu illisible (en-tête Elegoo absent) et réinscriptible — preuve que l'écriture avait
+fonctionné pour la plupart des pages, mais pas toutes.
+
+Cause trouvée : ni l'effacement ni le clonage ne vérifiaient jamais la réponse de la commande
+NFC d'écriture (0xA2/WRITE) — ils écrivaient page par page sans regarder si chaque page avait
+réellement été acceptée par le tag. Le protocole NFC Forum Type 2 Tag renvoie un ACK (0x0A) en
+cas de succès ; une page refusée silencieusement (tag éloigné un instant, par exemple) pouvait
+donc passer inaperçue jusqu'à l'échec de la vérification finale, sans message clair sur la page
+en cause.
+
+- L'écriture de chaque page (effacement **et** clonage) vérifie maintenant la réponse de la
+  commande, avec 3 tentatives avant d'abandonner.
+- En cas d'échec, le message indique désormais la page précise non confirmée, et invite à reposer
+  le tag bien à plat sans le bouger avant de réessayer, au lieu d'un message générique.
+- Vérifié par compilation réelle (kotlinc + stubs Android) : zéro erreur. Reste à confirmer sur le
+  terrain que ce correctif résout bien le cas remonté par pascal_lb.
+
 ## v0.5-clonage-confirme-terrain (build 5)
 
 **Clonage confirmé fonctionnel sur vrai terrain** (pascal_lb, forum, 08/10/2026) : testé avec

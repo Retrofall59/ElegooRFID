@@ -194,6 +194,35 @@ class MainActivity : AppCompatActivity() {
         return tampon.toByteArray()
     }
 
+    /**
+     * Ecrit une page (commande WRITE, 0xA2) et VERIFIE la reponse, avec quelques tentatives en
+     * cas d'echec passager.
+     *
+     * Ajoute le 08/10/2026, suite a un bug terrain (pascal_lb) : l'effacement signalait "la
+     * relecture ne confirme pas un effacement complet" alors que le tag etait bien devenu
+     * inutilisable (en-tete Elegoo absent, reecriture possible) - signe que l'ecriture avait
+     * fonctionne pour la plupart des pages mais pas toutes. La cause : ni l'effacement ni le
+     * clonage ne regardaient jamais la reponse de la commande WRITE. Or le protocole NFC Forum
+     * Type 2 Tag prevoit qu'une ecriture reussie renvoie un ACK (un seul octet 0x0A) - une
+     * ecriture qui echoue silencieusement (tag eloigne un instant, page refusee...) peut renvoyer
+     * autre chose, ou rien d'exploitable, sans forcement lever d'exception. En ignorant cette
+     * reponse, le code pouvait croire avoir tout ecrit alors qu'une ou plusieurs pages n'avaient
+     * pas pris - exactement ce qui explique le cas remonte.
+     */
+    private fun ecrirePageAvecVerif(nfcA: NfcA, page: Int, octets: ByteArray): Boolean {
+        repeat(3) {
+            try {
+                val reponse = nfcA.transceive(
+                    byteArrayOf(0xA2.toByte(), page.toByte(), octets[0], octets[1], octets[2], octets[3])
+                )
+                if (reponse.size == 1 && reponse[0] == 0x0A.toByte()) return true
+            } catch (e: Exception) {
+                // Tag eloigne un instant pendant l'ecriture : on retente avant d'abandonner cette page.
+            }
+        }
+        return false
+    }
+
     // ============================== CLONAGE ==============================
     // Voir ClonageElegoo.kt pour le detail des plages de pages et le raisonnement de securite
     // (pourquoi on ne touche jamais aux pages 0x28+ de configuration de la puce).
@@ -254,23 +283,26 @@ class MainActivity : AppCompatActivity() {
 
         try {
             nfcA.connect()
+            var pageEnEchec: Int? = null
             for (page in ClonageElegoo.pagesAEffacer()) {
-                val o = ClonageElegoo.OCTETS_PAGE_VIDE
-                nfcA.transceive(byteArrayOf(0xA2.toByte(), page.toByte(), o[0], o[1], o[2], o[3]))
+                if (!ecrirePageAvecVerif(nfcA, page, ClonageElegoo.OCTETS_PAGE_VIDE)) {
+                    pageEnEchec = page
+                    break
+                }
             }
             val dumpRelu = lireDumpBrut(nfcA, ClonageElegoo.DERNIERE_PAGE_DONNEES)
             nfcA.close()
 
             enAttenteTagEffacement = false
-            val reussi = ClonageElegoo.zoneEffacee(dumpRelu)
+            val reussi = pageEnEchec == null && ClonageElegoo.zoneEffacee(dumpRelu)
             runOnUiThread {
                 btnAnnulerClonage.visibility = View.GONE
                 btnEffacer.visibility = View.VISIBLE
                 if (dernierScanReussi) btnCloner.visibility = View.VISIBLE
-                txtStatut.text = if (reussi) {
-                    "Tag effacé et vérifié ✓ — prêt pour un nouveau clonage"
-                } else {
-                    "Écriture terminée mais la relecture ne confirme pas un effacement complet - réessaie."
+                txtStatut.text = when {
+                    reussi -> "Tag effacé et vérifié ✓ — prêt pour un nouveau clonage"
+                    pageEnEchec != null -> "Écriture interrompue (page 0x%02X non confirmée) — repose le tag bien à plat sans le bouger et réessaie.".format(pageEnEchec)
+                    else -> "Écriture terminée mais la relecture ne confirme pas un effacement complet - réessaie."
                 }
             }
         } catch (e: Exception) {
@@ -375,15 +407,20 @@ class MainActivity : AppCompatActivity() {
 
         try {
             nfcA.connect()
+            var pageEnEchec: Int? = null
             for ((page, octets) in ClonageElegoo.pagesAEcrire(dumpSource)) {
                 // Commande WRITE (NFC Forum Type 2 Tag) : 0xA2, numero de page, 4 octets de donnee.
-                nfcA.transceive(byteArrayOf(0xA2.toByte(), page.toByte(), octets[0], octets[1], octets[2], octets[3]))
+                // Verifiee via ecrirePageAvecVerif (voir plus haut) depuis le 08/10/2026.
+                if (!ecrirePageAvecVerif(nfcA, page, octets)) {
+                    pageEnEchec = page
+                    break
+                }
             }
             val dumpRelu = lireDumpBrut(nfcA, ClonageElegoo.DERNIERE_PAGE_DONNEES)
             nfcA.close()
 
             enAttenteTagCible = false
-            val reussi = ClonageElegoo.zoneCloneeIdentique(dumpSource, dumpRelu)
+            val reussi = pageEnEchec == null && ClonageElegoo.zoneCloneeIdentique(dumpSource, dumpRelu)
             runOnUiThread {
                 btnAnnulerClonage.visibility = View.GONE
                 btnEffacer.visibility = View.VISIBLE
@@ -391,6 +428,8 @@ class MainActivity : AppCompatActivity() {
                 if (reussi) {
                     txtStatut.text = "Clonage réussi et vérifié ✓"
                     if (GestionnaireParametres.lireVibrationFinLecture(this)) vibrerConfirmation()
+                } else if (pageEnEchec != null) {
+                    txtStatut.text = "Écriture interrompue (page 0x%02X non confirmée) — repose le tag bien à plat sans le bouger et réessaie.".format(pageEnEchec)
                 } else {
                     txtStatut.text = "Écriture terminée mais la relecture ne correspond pas - clonage probablement incomplet. Réessaie."
                 }
