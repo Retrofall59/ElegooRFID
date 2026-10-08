@@ -20,8 +20,8 @@ android {
         applicationId "com.tomyn.elegoorfid"
         minSdk 26
         targetSdk 34
-        versionCode 9
-        versionName "0.9-import-bin-hex"
+        versionCode 11
+        versionName "0.11-date-fabrication"
     }
 
     buildTypes {

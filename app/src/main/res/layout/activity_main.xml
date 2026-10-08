@@ -44,8 +44,9 @@
                 android:contentDescription="Parametres" />
         </LinearLayout>
 
-        <!-- Bandeau "pas encore valide" : disparait de lui-meme des que la premiere lecture
-             reussie confirme la doc officielle sur un vrai tag (voir GestionnaireParametres). -->
+        <!-- Bandeau d'avertissement : texte statique (aucune bascule de visibilite dans le code,
+             malgre ce qu'un ancien commentaire laissait croire) - mis a jour a la main a chaque
+             fois qu'un champ passe de "non confirme" a "confirme". Voir CHANGELOG.md. -->
         <TextView
             android:id="@+id/bandeauNonValide"
             android:layout_width="match_parent"
@@ -53,7 +54,7 @@
             android:layout_marginBottom="14dp"
             android:background="@drawable/fond_carte"
             android:padding="10dp"
-            android:text="⚠️ Couleur, poids et diamètre confirmés sur 2 vraies bobines. Matière et date pas encore localisées avec certitude."
+            android:text="✅ Tous les champs connus (couleur, poids, diamètre, matière, sous-type, température buse, date de fabrication) sont confirmés, sur de vraies bobines ou via l'éditeur open-source elegoo-rfid-editor."
             android:textColor="@color/texte_secondaire"
             android:textSize="12sp"
             android:gravity="center" />

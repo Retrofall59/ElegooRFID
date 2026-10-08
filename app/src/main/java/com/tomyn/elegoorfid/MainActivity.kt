@@ -501,18 +501,26 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) { /* hex invalide : on garde l'icone NFC */ }
         }
 
-        // Date de fabrication pas encore localisee avec certitude (voir le commentaire en tete de
-        // DecodeurElegoo.kt) : on ne l'affiche pas plutot que d'inventer une valeur.
         info.matiereTexte?.let { ajouterLigneInfo(R.drawable.ic_bobine, "Matière : $it") }
+        info.sousTypeTexte?.let { ajouterLigneInfo(R.drawable.ic_bobine, "Sous-type : $it") }
         info.couleurHex?.let { ajouterLigneInfo(R.drawable.ic_couleur, "Couleur : #$it") }
         info.poidsGrammes?.let { ajouterLigneInfo(R.drawable.ic_materiau, "Poids bobine : ${it}g") }
         info.diametreMm?.let { ajouterLigneInfo(R.drawable.ic_temperature, "Diamètre : ${it}mm") }
+        if (info.tempMinC != null && info.tempMaxC != null) {
+            ajouterLigneInfo(R.drawable.ic_temperature, "Température buse : ${info.tempMinC}-${info.tempMaxC}°C")
+        }
+        info.dateFabricationTexte?.let { ajouterLigneInfo(R.drawable.ic_bobine, "Date de fabrication : $it") }
 
         val resume = StringBuilder()
         info.matiereTexte?.let { resume.appendLine("Matière : $it") }
+        info.sousTypeTexte?.let { resume.appendLine("Sous-type : $it") }
         info.couleurHex?.let { resume.appendLine("Couleur : #$it") }
         info.poidsGrammes?.let { resume.appendLine("Poids : ${it}g") }
+        if (info.tempMinC != null && info.tempMaxC != null) {
+            resume.appendLine("Température buse : ${info.tempMinC}-${info.tempMaxC}°C")
+        }
         info.diametreMm?.let { resume.appendLine("Diamètre : ${it}mm") }
+        info.dateFabricationTexte?.let { resume.appendLine("Date de fabrication : $it") }
         info.codeFabricant?.let { resume.appendLine("Code fabricant : $it") }
         dernierResume = resume.toString().trim()
         dernierDumpTexte = dernierResume + "\n\n--- DUMP BRUT (pour analyse) ---\n" + formaterDumpHex(dump)

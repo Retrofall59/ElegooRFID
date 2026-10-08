@@ -32,23 +32,41 @@ package com.tomyn.elegoorfid
  * de fichier qu'il avait choisi ("RAPID_TPU_95A"), confirmation supplementaire que l'offset et la
  * table sont les bons.
  *
- * CE QUI N'EST TOUJOURS PAS CONFIRME : date de fabrication.
+ * TEMPERATURE D'EXTRUSION (ajoute le 08/10/2026, meme source que matiere/sous-type) : page 0x15,
+ * min sur les 2 premiers octets (0x54-0x55) et max sur les 2 derniers (0x56-0x57). AUCUN champ
+ * "temperature plateau" n'existe dans ce format - seule la temperature buse (min/max) est
+ * presente.
+ *
+ * DATE DE FABRICATION (ajoute le 09/10/2026) : trouvee par Damdam2959 directement dans
+ * l'editeur hexadecimal de l'editeur elegoo-rfid-editor (qui annote chaque page), puis confirmee
+ * dans son code source (ElegooSpool.ts) - page 0x18, en BCD (pas binaire direct) : octet 0x60 =
+ * annee sur 2 chiffres, octet 0x61 = mois. Ex. octet 0x60 = 0x25 -> annee 2025 (BCD : chiffre haut
+ * 2, chiffre bas 5) ; octet 0x61 = 0x01 -> janvier. Pas de jour, seulement annee+mois.
+ *
+ * PLUS AUCUN CHAMP CONNU N'EST NON CONFIRME.
  */
 object DecodeurElegoo {
 
     data class InfoBobine(
         val headerValide: Boolean?,     // true si l'octet d'en-tete vaut bien 0x36 (signature du format)
         val codeFabricant: String?,
-        val matiereTexte: String?,      // ex. "PETG", "RAPID TPU 95A" - null si code non reconnu
+        val matiereTexte: String?,      // nom de la famille, ex. "PETG" - null si code non reconnu
+        val sousTypeTexte: String?,     // nom precis si different de la famille, ex. "RAPID TPU 95A"
         val couleurHex: String?,        // RGB888 brut, ex. "106DD7" - directement exploitable, pas de table a deviner
         val diametreMm: Double?,
-        val poidsGrammes: Int?
+        val poidsGrammes: Int?,
+        val tempMinC: Int?,              // temperature d'extrusion (buse) minimale, en degres C
+        val tempMaxC: Int?,              // temperature d'extrusion (buse) maximale, en degres C
+        val dateFabricationTexte: String? // "MM/AAAA", ex. "01/2025" - null si mois invalide (0 ou >12)
     )
 
     private fun u16(d: ByteArray, off: Int): Int? {
         if (off + 1 >= d.size) return null
         return ((d[off].toInt() and 0xFF) shl 8) or (d[off + 1].toInt() and 0xFF)
     }
+
+    /** Decode un octet BCD (ex. 0x25 -> 25) en entier decimal. */
+    private fun decoderBCD(octet: Int): Int = ((octet shr 4) and 0x0F) * 10 + (octet and 0x0F)
 
     private fun u32(d: ByteArray, off: Int): Long? {
         if (off + 3 >= d.size) return null
@@ -67,18 +85,30 @@ object DecodeurElegoo {
         val fabricant = if (dump.size >= 69) dump.copyOfRange(65, 69).joinToString(":") { "%02X".format(it) } else null
         val codeMatiere = u32(dump, 72)
         val codeSousType = u16(dump, 76)
-        val matiere = MaterialsElegoo.resoudreTexteMatiere(codeMatiere, codeSousType)
+        val matiere = MaterialsElegoo.resoudreFamilleMatiere(codeMatiere)
+        val sousType = MaterialsElegoo.resoudreSousType(codeMatiere, codeSousType)
         val couleur = if (dump.size >= 83) dump.copyOfRange(80, 83).joinToString("") { "%02X".format(it) } else null
         val diametreBrut = u16(dump, 92)
         val poids = u16(dump, 94)
+        val tempMin = u16(dump, 84)
+        val tempMax = u16(dump, 86)
+        val dateFabrication = if (dump.size >= 98) {
+            val annee = decoderBCD(dump[96].toInt() and 0xFF)
+            val mois = decoderBCD(dump[97].toInt() and 0xFF)
+            if (mois in 1..12) "%02d/20%02d".format(mois, annee) else null
+        } else null
 
         return InfoBobine(
             headerValide = entete,
             codeFabricant = fabricant,
             matiereTexte = matiere,
+            sousTypeTexte = sousType,
             couleurHex = couleur,
             diametreMm = diametreBrut?.let { it / 100.0 },
-            poidsGrammes = poids
+            poidsGrammes = poids,
+            tempMinC = tempMin,
+            tempMaxC = tempMax,
+            dateFabricationTexte = dateFabrication
         )
     }
 }

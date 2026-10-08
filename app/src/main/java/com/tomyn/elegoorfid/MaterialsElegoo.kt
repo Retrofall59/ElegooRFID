@@ -95,15 +95,18 @@ object MaterialsElegoo {
         0x0E02 to "PPS-CF",
     )
 
+    /** Nom de la famille de matiere (ex. "TPU"), ou null si le code n'est pas reconnu. */
+    fun resoudreFamilleMatiere(codeMatiere: Long?): String? =
+        codeMatiere?.let { CODES_MATIERE[it] }
+
     /**
-     * Resout le texte matiere a afficher a partir des deux codes bruts. Prefere le sous-type
-     * (plus precis, ex. "RAPID TPU 95A") ; si le sous-type n'est pas dans la table, retombe sur
-     * le nom de la famille de matiere seule ; si meme ca n'est pas reconnu, retourne null plutot
-     * que d'inventer un nom (meme choix que pour les autres champs non confirmes).
+     * Nom precis du sous-type (ex. "RAPID TPU 95A"), ou null si le code n'est pas reconnu OU
+     * s'il est identique au nom de la famille (pour eviter d'afficher "Sous-type : TPU" en plus
+     * de "Matière : TPU" quand ça n'apporte rien).
      */
-    fun resoudreTexteMatiere(codeMatiere: Long?, codeSousType: Int?): String? {
-        codeSousType?.let { CODES_SOUS_TYPE[it]?.let { nom -> return nom } }
-        codeMatiere?.let { CODES_MATIERE[it]?.let { nom -> return nom } }
-        return null
+    fun resoudreSousType(codeMatiere: Long?, codeSousType: Int?): String? {
+        val sousType = codeSousType?.let { CODES_SOUS_TYPE[it] } ?: return null
+        val famille = resoudreFamilleMatiere(codeMatiere)
+        return if (sousType == famille) null else sousType
     }
 }

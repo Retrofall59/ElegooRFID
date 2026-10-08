@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.11-date-fabrication (build 11)
+
+**Date de fabrication décodée**, trouvée par Damdam2959 directement dans l'éditeur hexadécimal de
+l'éditeur [elegoo-rfid-editor](https://github.com/Savion/elegoo-rfid-editor) (qui annote chaque
+page), puis confirmée dans son code source. Page 0x18 : octet `0x60` = année en BCD (ex. `0x25` =
+2025), octet `0x61` = mois en BCD (ex. `0x01` = janvier). Pas de jour.
+
+- Nouvelle ligne "Date de fabrication : MM/AAAA".
+- Tous les champs documentés par l'éditeur sont désormais confirmés - le bandeau d'avertissement
+  de l'écran principal est mis à jour en conséquence.
+- Vérifié par compilation réelle (kotlinc + stubs Android) : zéro erreur.
+
+## v0.10-sous-type-et-temperature (build 10)
+
+**Sous-type affiché séparément + température d'extrusion ajoutée**, à la demande de Damdam2959.
+
+- "Matière" affiche maintenant le nom de la famille (ex. "TPU"), et une nouvelle ligne
+  "Sous-type" apparaît en dessous quand il est plus précis (ex. "RAPID TPU 95A") - pas de ligne en
+  double quand le sous-type est juste le nom générique de la matière.
+- Nouvelle ligne "Température buse : XXX-XXX°C" (min-max), même source que matière/sous-type
+  (page 0x15 du tag). **Aucun champ "température plateau" n'existe dans ce format** - vérifié
+  dans le code source de l'éditeur, seule la température buse y est présente.
+- Vérifié par compilation réelle (kotlinc + stubs Android) : zéro erreur.
+
 ## v0.9-import-bin-hex (build 9)
 
 **Import élargi aux fichiers `.bin` et `.hex` d'éditeurs externes**, à la demande de Damdam2959 :
