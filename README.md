@@ -33,10 +33,15 @@ dump") aux valeurs réelles de l'étiquette, et signaler tout écart.
 
 ## Fonctionnalités
 
-Lecture, copier/partager, export du dump brut, historique des scans, rapport de compatibilité,
-gestion du NFC désactivé, réglage de la vibration. L'impression d'étiquettes n'a volontairement
-pas été ajoutée tant que le décodeur n'est pas confirmé sur un vrai tag — imprimer une étiquette
-avec des données potentiellement fausses serait pire que de ne rien afficher.
+Lecture, copier/partager, export **et import** du dump brut, historique des scans, rapport de
+compatibilité, gestion du NFC désactivé, réglage de la vibration. L'impression d'étiquettes n'a
+volontairement pas été ajoutée tant que le décodeur n'est pas confirmé sur un vrai tag — imprimer
+une étiquette avec des données potentiellement fausses serait pire que de ne rien afficher.
+
+**Importer un dump pour cloner (v0.7)** : jusqu'à présent le clonage exigeait d'avoir la bobine
+source physiquement en main au moment de l'écriture. Le bouton "Importer un dump pour cloner"
+permet de relire un fichier exporté via "Exporter le dernier dump" (sur ce téléphone ou un autre)
+pour cloner un tag vierge plus tard, sans la bobine source présente.
 
 ## Confidentialité
 

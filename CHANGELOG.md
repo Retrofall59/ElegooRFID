@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.7-import-dump (build 7)
+
+**Nouveau bouton "Importer un dump pour cloner"**, idée de Damdam2959 : jusqu'ici le clonage
+exigeait d'avoir la bobine source physiquement en main au moment de l'écriture (on scanne la
+source, puis on scanne tout de suite le tag vierge). Le fichier exporté par "Exporter le dernier
+dump" était seulement un rapport texte lisible, pas réutilisable.
+
+- L'appli sait désormais relire ce même fichier exporté (ou un fichier équivalent) et en extraire
+  le dump brut, pour pouvoir cloner plus tard sans la bobine source présente — utile par exemple
+  pour scanner une bobine chez quelqu'un d'autre, puis cloner un tag vierge chez soi.
+- Aucun nouveau format de fichier : l'export existant fonctionne déjà pour l'import, les deux
+  fonctions lisent/écrivent le même format "Page XX : AA BB CC DD".
+- Vérifié par compilation réelle (kotlinc + stubs Android) : zéro erreur.
+
 ## v0.6-ecriture-verifiee (build 6)
 
 **Correctif** suite au retour terrain de pascal_lb (08/10/2026) : effacer un tag déjà cloné par

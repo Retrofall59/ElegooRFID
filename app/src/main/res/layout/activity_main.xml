@@ -170,6 +170,21 @@
             android:textAllCaps="false"
             android:textSize="13sp" />
 
+        <!-- Import (ajoute le 08/10/2026) : permet de charger un dump exporte precedemment
+             (depuis n'importe quel appareil) sans avoir besoin de la bobine source physique au
+             moment du clonage - utile pour cloner plus tard, ou cloner a partir d'une bobine
+             qu'on a seulement scannee chez quelqu'un d'autre. -->
+        <Button
+            android:id="@+id/btnImporterDump"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/fond_bouton_secondaire"
+            android:text="Importer un dump pour cloner"
+            android:textColor="@color/elegoo_noir"
+            android:textAllCaps="false"
+            android:textSize="13sp" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

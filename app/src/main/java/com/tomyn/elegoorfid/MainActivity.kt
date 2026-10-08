@@ -81,6 +81,7 @@ class MainActivity : AppCompatActivity() {
         btnAnnulerClonage.setOnClickListener { annulerModeAttente() }
         btnEffacer.setOnClickListener { demarrerModeEffacement() }
         findViewById<Button>(R.id.btnExporter).setOnClickListener { exporterDump() }
+        findViewById<Button>(R.id.btnImporterDump).setOnClickListener { importerDump() }
         findViewById<Button>(R.id.btnCopier).setOnClickListener { copierResume() }
         findViewById<Button>(R.id.btnPartager).setOnClickListener { partagerResume() }
         findViewById<Button>(R.id.btnHistorique).setOnClickListener { afficherHistorique() }
@@ -560,6 +561,50 @@ class MainActivity : AppCompatActivity() {
         exporterVers(nomFichier, dernierDumpTexte, "text/plain")
     }
 
+    /**
+     * Importe un dump exporte precedemment (le meme fichier .txt que exporterDump() produit, sur
+     * CET appareil ou un autre) pour pouvoir cloner sans avoir la bobine source physique sous la
+     * main au moment du clonage. Ajoute le 08/10/2026 a la demande de Tomyn.
+     */
+    private fun importerDump() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+        }
+        try {
+            startActivityForResult(intent, CODE_IMPORT)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Impossible d'ouvrir le sélecteur de fichiers : ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /**
+     * Relit le texte d'un fichier importe et en extrait le dump brut, au format produit par
+     * formaterDumpHex() (lignes "Page XX : AA BB CC DD", a partir de la page 0). Les eventuelles
+     * lignes de resume avant/apres (couleur, poids...) sont ignorees - seules les lignes "Page "
+     * comptent. Retourne null si le fichier ne contient aucune ligne de dump reconnaissable.
+     */
+    private fun parserDumpHex(texte: String): ByteArray? {
+        val pages = mutableListOf<ByteArray>()
+        for (ligneBrute in texte.lines()) {
+            val ligne = ligneBrute.trim()
+            if (!ligne.startsWith("Page ")) continue
+            val parties = ligne.split(":")
+            if (parties.size != 2) return null
+            val octetsHex = parties[1].trim().split(" ").filter { it.isNotBlank() }
+            if (octetsHex.size != 4) return null
+            try {
+                pages.add(ByteArray(4) { i -> octetsHex[i].toInt(16).toByte() })
+            } catch (e: NumberFormatException) {
+                return null
+            }
+        }
+        if (pages.isEmpty()) return null
+        val resultat = ByteArray(pages.size * 4)
+        pages.forEachIndexed { index, octets -> octets.copyInto(resultat, index * 4) }
+        return resultat
+    }
+
     private fun exporterVers(nomSuggere: String, contenu: String, typeMime: String) {
         contenuAExporter = contenu
         val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
@@ -578,21 +623,44 @@ class MainActivity : AppCompatActivity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != CODE_EXPORT) return
-        val contenu = contenuAExporter
-        contenuAExporter = null
-        val uri = data?.data
-        if (resultCode != RESULT_OK || uri == null) return
-        if (contenu == null) {
-            Toast.makeText(this, "Export interrompu (l'appli a été relancée), recommence.", Toast.LENGTH_LONG).show()
-            return
-        }
-        try {
-            val flux = contentResolver.openOutputStream(uri) ?: throw IOException("fichier inaccessible")
-            flux.use { it.write(contenu.toByteArray(Charsets.UTF_8)) }
-            Toast.makeText(this, "Fichier enregistré.", Toast.LENGTH_SHORT).show()
-        } catch (e: Exception) {
-            Toast.makeText(this, "Erreur export : ${e.message}", Toast.LENGTH_LONG).show()
+        when (requestCode) {
+            CODE_EXPORT -> {
+                val contenu = contenuAExporter
+                contenuAExporter = null
+                val uri = data?.data
+                if (resultCode != RESULT_OK || uri == null) return
+                if (contenu == null) {
+                    Toast.makeText(this, "Export interrompu (l'appli a été relancée), recommence.", Toast.LENGTH_LONG).show()
+                    return
+                }
+                try {
+                    val flux = contentResolver.openOutputStream(uri) ?: throw IOException("fichier inaccessible")
+                    flux.use { it.write(contenu.toByteArray(Charsets.UTF_8)) }
+                    Toast.makeText(this, "Fichier enregistré.", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Erreur export : ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+            CODE_IMPORT -> {
+                val uri = data?.data
+                if (resultCode != RESULT_OK || uri == null) return
+                try {
+                    val texte = contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                        ?: throw IOException("fichier inaccessible")
+                    val dump = parserDumpHex(texte)
+                    if (dump == null || dump.size < ClonageElegoo.TAILLE_MIN_DUMP_SOURCE) {
+                        Toast.makeText(this, "Fichier non reconnu : ce n'est pas un dump exporté par cette appli, ou il est incomplet.", Toast.LENGTH_LONG).show()
+                        return
+                    }
+                    dernierDumpBrut = dump
+                    dernierScanReussi = true
+                    btnCloner.visibility = View.VISIBLE
+                    txtStatut.text = "Dump importé (${dump.size} octets) - prêt à cloner sur un tag vierge."
+                    Toast.makeText(this, "Dump importé, appuie sur \"Cloner sur une bobine vierge\".", Toast.LENGTH_LONG).show()
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Erreur d'import : ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
         }
     }
 
@@ -723,5 +791,6 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         const val CODE_EXPORT = 4711
+        const val CODE_IMPORT = 4712
     }
 }
