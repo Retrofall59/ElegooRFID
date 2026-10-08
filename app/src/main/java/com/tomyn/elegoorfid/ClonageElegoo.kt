@@ -118,4 +118,18 @@ object ClonageElegoo {
         if (dump.size < offset + 2) return null
         return dump.copyOfRange(offset, offset + 2).joinToString(" ") { "%02X".format(it) }
     }
+
+    /**
+     * Octets de verrouillage STATIQUE (page 0x02, octets 2-3 : Lock0/Lock1) en hexa. Ajoute le
+     * 09/10/2026 : le verrou dynamique (page 0x28) ne suffit pas a tout expliquer - un test de
+     * Damdam2959 sur sa propre bobine a echoue sur la page 0x03 (le Capability Container, pas
+     * l'en-tete 0x10 comme chez pascal_lb) alors que le verrou dynamique etait a 00 00 (pas de
+     * verrou). Le verrou STATIQUE protege justement souvent specifiquement la page CC par defaut
+     * sur un NTAG213 du commerce - jamais ecrit, lecture seule.
+     */
+    fun verrousStatiquesHex(dump: ByteArray): String? {
+        val offset = 0x02 * 4 + 2
+        if (dump.size < offset + 2) return null
+        return dump.copyOfRange(offset, offset + 2).joinToString(" ") { "%02X".format(it) }
+    }
 }

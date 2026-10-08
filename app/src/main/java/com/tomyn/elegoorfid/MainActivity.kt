@@ -320,10 +320,12 @@ class MainActivity : AppCompatActivity() {
                     else -> {
                         val pagesRestantes = ClonageElegoo.pagesNonEffacees(dumpRelu)
                         val listePages = pagesRestantes.joinToString(", ") { "0x%02X".format(it) }
-                        val verrous = ClonageElegoo.verrousDynamiquesHex(dumpRelu)
+                        val verrousDyn = ClonageElegoo.verrousDynamiquesHex(dumpRelu)
+                        val verrousStat = ClonageElegoo.verrousStatiquesHex(dumpRelu)
                         "Écriture confirmée par le tag (ACK) mais relecture non vide : page(s) $listePages encore non nulle(s)" +
-                            (verrous?.let { " — verrouillage dynamique (page 0x28) : $it" } ?: "") +
-                            ". Réessaie ; si ça persiste sur la même page, elle est peut-être verrouillée en usine par Elegoo."
+                            (verrousDyn?.let { " — verrou dynamique (0x28) : $it" } ?: "") +
+                            (verrousStat?.let { " — verrou statique (0x02) : $it" } ?: "") +
+                            ". Réessaie ; si ça persiste sur la même page, elle est peut-être verrouillée."
                     }
                 }
             }

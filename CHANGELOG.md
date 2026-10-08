@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.13-verrou-statique (build 13)
+
+**Suite au test de Damdam2959** sur sa propre bobine (PLA noir) : échec d'effacement sur la page
+`0x03` (le Capability Container, pas l'en-tête 0x10 comme chez pascal_lb), avec un verrou
+dynamique à `00 00` (donc pas de verrou usine comme sur les tags de pascal). Page différente,
+cause probablement différente - on ne vérifiait que le verrou dynamique (page 0x28), jamais le
+verrou STATIQUE (page 0x02), qui protège justement souvent par défaut la page CC sur un NTAG213 du
+commerce.
+
+- Le message d'échec d'effacement affiche maintenant aussi le verrou statique (page 0x02,
+  lecture seule, jamais écrite).
+- Vérifié par compilation réelle (kotlinc + stubs Android) : zéro erreur.
+
 ## v0.12-diagnostic-effacement (build 12)
 
 **Suite au retour terrain de pascal_lb (09/10/2026)** : le problème d'effacement incomplet
