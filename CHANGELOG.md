@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.14-semaine-fabrication (build 14)
+
+**Date de fabrication revue** : sur la première vraie bobine testée par Damdam2959 (PLA noir),
+le champ "mois" décodait en 36 - un mois qui n'existe pas. Hypothèse de Damdam2959, bien plus
+logique : un code YYWW (année + numéro de semaine), convention courante dans l'industrie - 36
+est un numéro de semaine tout à fait valide, pas un mois. Vérification sur les 4 vrais dumps de
+pascal_lb déjà en local (`tests/dumps/`) : les 4 ont exactement la même valeur (`00 36 C8 00`),
+malgré 4 couleurs différentes - ne tranche pas (pourrait être le même lot de fabrication, ou une
+valeur fixe), donc affiché comme hypothèse non confirmée plutôt que comme fait.
+
+- Nouveau repli : si l'octet ne décode pas un mois valide (1-12) mais un numéro de semaine valide
+  (1-53), affiche "Semaine XX (hypothèse non confirmée)" au lieu de ne rien afficher.
+- Vérifié par compilation réelle (kotlinc + stubs Android) : zéro erreur.
+
 ## v0.13-verrou-statique (build 13)
 
 **Suite au test de Damdam2959** sur sa propre bobine (PLA noir) : échec d'effacement sur la page

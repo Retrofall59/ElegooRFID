@@ -533,6 +533,7 @@ class MainActivity : AppCompatActivity() {
             ajouterLigneInfo(R.drawable.ic_temperature, "Température buse : ${info.tempMinC}-${info.tempMaxC}°C")
         }
         info.dateFabricationTexte?.let { ajouterLigneInfo(R.drawable.ic_bobine, "Date de fabrication : $it") }
+        info.semaineFabricationTexte?.let { ajouterLigneInfo(R.drawable.ic_bobine, it) }
 
         val resume = StringBuilder()
         info.matiereTexte?.let { resume.appendLine("Matière : $it") }
@@ -544,6 +545,7 @@ class MainActivity : AppCompatActivity() {
         }
         info.diametreMm?.let { resume.appendLine("Diamètre : ${it}mm") }
         info.dateFabricationTexte?.let { resume.appendLine("Date de fabrication : $it") }
+        info.semaineFabricationTexte?.let { resume.appendLine(it) }
         info.codeFabricant?.let { resume.appendLine("Code fabricant : $it") }
         dernierResume = resume.toString().trim()
         dernierDumpTexte = dernierResume + "\n\n--- DUMP BRUT (pour analyse) ---\n" + formaterDumpHex(dump)

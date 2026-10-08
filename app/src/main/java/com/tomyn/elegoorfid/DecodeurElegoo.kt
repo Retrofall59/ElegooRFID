@@ -37,13 +37,16 @@ package com.tomyn.elegoorfid
  * "temperature plateau" n'existe dans ce format - seule la temperature buse (min/max) est
  * presente.
  *
- * DATE DE FABRICATION (ajoute le 09/10/2026) : trouvee par Damdam2959 directement dans
- * l'editeur hexadecimal de l'editeur elegoo-rfid-editor (qui annote chaque page), puis confirmee
- * dans son code source (ElegooSpool.ts) - page 0x18, en BCD (pas binaire direct) : octet 0x60 =
- * annee sur 2 chiffres, octet 0x61 = mois. Ex. octet 0x60 = 0x25 -> annee 2025 (BCD : chiffre haut
- * 2, chiffre bas 5) ; octet 0x61 = 0x01 -> janvier. Pas de jour, seulement annee+mois.
- *
- * PLUS AUCUN CHAMP CONNU N'EST NON CONFIRME.
+ * DATE DE FABRICATION (ajoute le 09/10/2026, revu le meme jour) : page trouvee par Damdam2959
+ * dans l'editeur hexadecimal de l'editeur elegoo-rfid-editor (qui annote chaque page), interpretee
+ * par son code source (ElegooSpool.ts) comme annee+mois en BCD (octet 0x60 = annee, 0x61 = mois).
+ * Mais sur la PREMIERE vraie bobine testee (Damdam2959, PLA noir), ca donne 0x60=0x00, 0x61=0x36 -
+ * un "mois 36" qui n'existe pas. Hypothese alternative de Damdam2959, bien plus plausible : un
+ * code YYWW (annee + numero de semaine), convention tres courante dans l'industrie - 0x36 en BCD
+ * fait "36", un numero de semaine tout a fait valide (1-53), alors que 36 est impossible comme
+ * mois. Affiche donc "annee/mois" quand l'octet 0x61 decode un mois valide (1-12, comme sur le
+ * gabarit de l'editeur), sinon "semaine" quand il decode un numero de semaine valide (1-53) - dans
+ * ce second cas, etiquete comme hypothese non confirmee (un seul echantillon reel pour l'instant).
  */
 object DecodeurElegoo {
 
@@ -57,7 +60,8 @@ object DecodeurElegoo {
         val poidsGrammes: Int?,
         val tempMinC: Int?,              // temperature d'extrusion (buse) minimale, en degres C
         val tempMaxC: Int?,              // temperature d'extrusion (buse) maximale, en degres C
-        val dateFabricationTexte: String? // "MM/AAAA", ex. "01/2025" - null si mois invalide (0 ou >12)
+        val dateFabricationTexte: String?,       // "MM/AAAA", ex. "01/2025" - mois valide (1-12) uniquement
+        val semaineFabricationTexte: String?     // "Semaine XX (hypothèse non confirmée)" - repli si pas un mois valide mais une semaine valide (1-53)
     )
 
     private fun u16(d: ByteArray, off: Int): Int? {
@@ -92,11 +96,17 @@ object DecodeurElegoo {
         val poids = u16(dump, 94)
         val tempMin = u16(dump, 84)
         val tempMax = u16(dump, 86)
-        val dateFabrication = if (dump.size >= 98) {
+        var dateFabrication: String? = null
+        var semaineFabrication: String? = null
+        if (dump.size >= 98) {
             val annee = decoderBCD(dump[96].toInt() and 0xFF)
-            val mois = decoderBCD(dump[97].toInt() and 0xFF)
-            if (mois in 1..12) "%02d/20%02d".format(mois, annee) else null
-        } else null
+            val moisOuSemaine = decoderBCD(dump[97].toInt() and 0xFF)
+            if (moisOuSemaine in 1..12) {
+                dateFabrication = "%02d/20%02d".format(moisOuSemaine, annee)
+            } else if (moisOuSemaine in 1..53) {
+                semaineFabrication = "Semaine %02d (hypothèse non confirmée)".format(moisOuSemaine)
+            }
+        }
 
         return InfoBobine(
             headerValide = entete,
@@ -108,7 +118,8 @@ object DecodeurElegoo {
             poidsGrammes = poids,
             tempMinC = tempMin,
             tempMaxC = tempMax,
-            dateFabricationTexte = dateFabrication
+            dateFabricationTexte = dateFabrication,
+            semaineFabricationTexte = semaineFabrication
         )
     }
 }
