@@ -216,7 +216,19 @@ class MainActivity : AppCompatActivity() {
                 val reponse = nfcA.transceive(
                     byteArrayOf(0xA2.toByte(), page.toByte(), octets[0], octets[1], octets[2], octets[3])
                 )
-                if (reponse.size == 1 && reponse[0] == 0x0A.toByte()) return true
+                if (reponse.size == 1 && reponse[0] == 0x0A.toByte()) {
+                    // Delai apres l'ACK (ajoute le 09/10/2026, suite au retour terrain de
+                    // pascal_lb : effacement toujours incomplet meme avec l'ACK verifie - page
+                    // 0x10 specifiquement, qui change d'un essai a l'autre selon lui). Hypothese :
+                    // l'ACK confirme la reception de la commande, pas la fin reelle du cycle
+                    // d'ecriture EEPROM (quelques ms) ; enchainer immediatement sur la page
+                    // suivante (ou sur la relecture finale) pourrait devancer cette fin de cycle.
+                    // Ce delai ne resout pas forcement tout (un verrou materiel sur une page
+                    // precise resterait un verrou), mais elimine cette hypothese de course sans
+                    // rien risquer d'autre.
+                    try { Thread.sleep(10) } catch (e: InterruptedException) { /* rien a faire */ }
+                    return true
+                }
             } catch (e: Exception) {
                 // Tag eloigne un instant pendant l'ecriture : on retente avant d'abandonner cette page.
             }
@@ -291,7 +303,9 @@ class MainActivity : AppCompatActivity() {
                     break
                 }
             }
-            val dumpRelu = lireDumpBrut(nfcA, ClonageElegoo.DERNIERE_PAGE_DONNEES)
+            // Lecture diagnostique poussee jusqu'a 0x28 (octets de verrouillage dynamique) pour
+            // pouvoir expliquer un echec eventuel - jamais ecrite, voir ClonageElegoo.kt.
+            val dumpRelu = lireDumpBrut(nfcA, ClonageElegoo.DERNIERE_PAGE_DIAGNOSTIC)
             nfcA.close()
 
             enAttenteTagEffacement = false
@@ -303,7 +317,14 @@ class MainActivity : AppCompatActivity() {
                 txtStatut.text = when {
                     reussi -> "Tag effacé et vérifié ✓ — prêt pour un nouveau clonage"
                     pageEnEchec != null -> "Écriture interrompue (page 0x%02X non confirmée) — repose le tag bien à plat sans le bouger et réessaie.".format(pageEnEchec)
-                    else -> "Écriture terminée mais la relecture ne confirme pas un effacement complet - réessaie."
+                    else -> {
+                        val pagesRestantes = ClonageElegoo.pagesNonEffacees(dumpRelu)
+                        val listePages = pagesRestantes.joinToString(", ") { "0x%02X".format(it) }
+                        val verrous = ClonageElegoo.verrousDynamiquesHex(dumpRelu)
+                        "Écriture confirmée par le tag (ACK) mais relecture non vide : page(s) $listePages encore non nulle(s)" +
+                            (verrous?.let { " — verrouillage dynamique (page 0x28) : $it" } ?: "") +
+                            ". Réessaie ; si ça persiste sur la même page, elle est peut-être verrouillée en usine par Elegoo."
+                    }
                 }
             }
         } catch (e: Exception) {

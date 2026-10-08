@@ -87,4 +87,35 @@ object ClonageElegoo {
         val fin = (DERNIERE_PAGE_DONNEES + 1) * 4
         return dumpCibleRelu.copyOfRange(debut, fin).all { it == 0.toByte() }
     }
+
+    /**
+     * Liste les pages (0x03-0x27) qui ne sont PAS entierement a zero dans un dump relu apres
+     * effacement - pour remplacer un message generique "effacement incomplet" par la liste
+     * precise des pages en cause. Ajoute le 09/10/2026 suite au retour terrain de pascal_lb (la
+     * page qui resiste semble changer d'un essai a l'autre, a confirmer avec ce diagnostic).
+     */
+    fun pagesNonEffacees(dumpCibleRelu: ByteArray): List<Int> {
+        if (dumpCibleRelu.size < TAILLE_MIN_DUMP_SOURCE) return emptyList()
+        val resultat = mutableListOf<Int>()
+        for (page in PREMIERE_PAGE_DONNEES..DERNIERE_PAGE_DONNEES) {
+            val offset = page * 4
+            if (!dumpCibleRelu.copyOfRange(offset, offset + 4).all { it == 0.toByte() }) resultat.add(page)
+        }
+        return resultat
+    }
+
+    /** Derniere page a lire (jamais a ecrire) pour inclure les octets de verrouillage dynamique
+     *  (page 0x28, voir le commentaire en tete de fichier) dans un diagnostic en lecture seule. */
+    const val DERNIERE_PAGE_DIAGNOSTIC = 0x28
+
+    /**
+     * Octets de verrouillage dynamique (page 0x28, 2 premiers octets) en hexa, si le dump les
+     * couvre - sert uniquement a diagnostiquer un echec d'effacement (voir pagesNonEffacees), ne
+     * declenche jamais d'ecriture sur cette page.
+     */
+    fun verrousDynamiquesHex(dump: ByteArray): String? {
+        val offset = 0x28 * 4
+        if (dump.size < offset + 2) return null
+        return dump.copyOfRange(offset, offset + 2).joinToString(" ") { "%02X".format(it) }
+    }
 }

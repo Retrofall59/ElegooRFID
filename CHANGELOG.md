@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.12-diagnostic-effacement (build 12)
+
+**Suite au retour terrain de pascal_lb (09/10/2026)** : le problème d'effacement incomplet
+persiste en v0.6 et v0.7 malgré la vérification d'ACK - "toujours le 0x36 qui pose problème"
+(l'octet d'en-tête, page 0x10). Deux changements, sans certitude que ça résout le fond du
+problème, mais utiles dans tous les cas :
+
+- **Petit délai (10ms) après chaque ACK d'écriture confirmée**, avant de passer à la page
+  suivante. Hypothèse : l'ACK confirme la réception de la commande par le tag, pas forcément la
+  fin réelle du cycle d'écriture EEPROM (quelques ms) - enchaîner trop vite pourrait devancer
+  cette fin de cycle. Ne coûte presque rien en temps total (36 pages × 10ms ≈ 0,36s).
+- **Message d'échec d'effacement bien plus précis** : au lieu de "la relecture ne confirme pas un
+  effacement complet", le message liste maintenant exactement quelle(s) page(s) n'ont pas été
+  remises à zéro, et affiche la valeur des octets de verrouillage dynamique de la puce (page
+  0x28, lecture seule, jamais écrite) - ce champ a déjà des valeurs non standard sur les 4 vrais
+  dumps dont on dispose (voir le commentaire en tête de `ClonageElegoo.kt`), donc un verrou usine
+  posé par Elegoo sur une page précise reste une hypothèse sérieuse. Si le problème persiste,
+  cette info précise (quelle page, quelle valeur de verrou) permettra de trancher avec certitude
+  plutôt que de deviner.
+- Vérifié par compilation réelle (kotlinc + stubs Android) : zéro erreur.
+
 ## v0.11-date-fabrication (build 11)
 
 **Date de fabrication décodée**, trouvée par Damdam2959 directement dans l'éditeur hexadécimal de
