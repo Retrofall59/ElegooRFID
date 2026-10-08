@@ -7,41 +7,44 @@ couleur, poids, diamètre et date de fabrication.
 lot. Comme Anycubic, c'est un NTAG213 en lecture libre, sans chiffrement, mémoire utilisateur
 brute (pas de NDEF).
 
-## ⚠️ Statut : décodeur construit depuis la doc officielle, pas encore validé sur un vrai tag
+## ⚠️ Statut : décodeur réécrit depuis de vrais dumps, clonage confirmé sur le terrain
 
-Contrairement aux trois autres projets (tous établis à partir de vrais dumps de bobines),
-**Elegoo publie elle-même la structure complète de ses tags** :
-https://github.com/elegooofficial/ELEGOO-RFID-Tag-Guide
+La doc officielle d'Elegoo (EPC-256) s'est révélée fausse sur un point important dès la première
+vraie bobine scannée (merci pascal_lb sur le forum lesimprimantes3d.fr) : elle annonce les
+données utiles à partir de la page 0x04, alors qu'en réalité cette zone contient un enregistrement
+NDEF standard (lien `https://www.elegoo.com`, rien à voir avec la bobine) et les vraies données ne
+commencent qu'à la page 0x10. Le décodeur (`DecodeurElegoo.kt`) a donc été entièrement réécrit
+depuis de vrais dumps plutôt que depuis la doc.
 
-Le décodeur (`DecodeurElegoo.kt`) a été écrit directement à partir de cette doc, et **testé avec
-succès contre l'exemple numérique complet qu'elle fournit** (PLA-CF, 1,75 mm, 1000 g, rouge
-`#FF3700`, février 2025) — voir `tests/`. Mais aucune vraie bobine n'a encore été scannée : leur
-propre documentation contient des incohérences internes (un tableau d'introduction donne des
-exemples ASCII invalides pour le nom de matière, contredits par le tableau d'allocation détaillé
-et par l'exemple complet, qui eux sont cohérents entre eux — c'est cette seconde version qui a été
-retenue). Une divergence entre la doc et un vrai tag physique reste possible tant que personne ne
-l'a confirmé en vrai.
+**Confirmé sur le terrain** : couleur, poids, diamètre, clonage et effacement, tous testés avec
+succès sur de vraies bobines Elegoo. **Matière et sous-type** confirmés le 08/10/2026 par
+comparaison de plusieurs fichiers générés par l'éditeur open-source
+[elegoo-rfid-editor](https://github.com/Savion/elegoo-rfid-editor), qui liste directement dans
+son code source la table de correspondance (voir `MaterialsElegoo.kt`). **Reste non confirmé** :
+la date de fabrication.
 
-**Dès qu'une vraie bobine est scannée** : comparer le dump exporté (bouton "Exporter le dernier
-dump") aux valeurs réelles de l'étiquette, et signaler tout écart.
-
-## Format du tag (EPC-256)
+## Format du tag
 
 - **Couleur** : RGB888 brut, directement lisible (pas de code à deviner comme chez Anycubic)
-- **Matière et sous-type** : texte ASCII brut (ex. "PLA", "CF20" pour un composite carbone)
-- **Poids, diamètre, date de fabrication** : champs numériques simples
+- **Matière et sous-type** : code numérique sur 4 puis 2 octets (pas du texte ASCII malgré ce
+  qu'annonçait la doc officielle), voir `MaterialsElegoo.kt` pour la table de correspondance
+- **Poids, diamètre** : champs numériques simples
+- **Date de fabrication** : position pas encore identifiée
 
 ## Fonctionnalités
 
 Lecture, copier/partager, export **et import** du dump brut, historique des scans, rapport de
 compatibilité, gestion du NFC désactivé, réglage de la vibration. L'impression d'étiquettes n'a
-volontairement pas été ajoutée tant que le décodeur n'est pas confirmé sur un vrai tag — imprimer
-une étiquette avec des données potentiellement fausses serait pire que de ne rien afficher.
+volontairement pas été ajoutée tant que la date de fabrication n'est pas identifiée — imprimer une
+étiquette avec un champ manquant ou faux serait pire que de ne rien afficher.
 
-**Importer un dump pour cloner (v0.7)** : jusqu'à présent le clonage exigeait d'avoir la bobine
-source physiquement en main au moment de l'écriture. Le bouton "Importer un dump pour cloner"
-permet de relire un fichier exporté via "Exporter le dernier dump" (sur ce téléphone ou un autre)
-pour cloner un tag vierge plus tard, sans la bobine source présente.
+**Importer un dump pour cloner (v0.7, élargi en v0.9)** : jusqu'à présent le clonage exigeait
+d'avoir la bobine source physiquement en main au moment de l'écriture. Le bouton "Importer un
+dump pour cloner" permet de relire un fichier (sur ce téléphone ou un autre) pour cloner un tag
+vierge plus tard, sans la bobine source présente - trois formats acceptés automatiquement : le
+`.txt` exporté par cette appli, ou un `.bin`/`.hex` venant d'un éditeur externe comme
+[elegoo-rfid-editor](https://github.com/Savion/elegoo-rfid-editor) (pratique pour créer ses
+propres tags, par exemple pour du filament recyclé maison).
 
 ## Confidentialité
 

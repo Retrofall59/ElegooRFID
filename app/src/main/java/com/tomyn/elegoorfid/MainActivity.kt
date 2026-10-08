@@ -501,13 +501,15 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) { /* hex invalide : on garde l'icone NFC */ }
         }
 
-        // Matiere et date de fabrication pas encore localisees avec certitude (voir le commentaire
-        // en tete de DecodeurElegoo.kt) : on ne les affiche pas plutot que d'inventer une valeur.
+        // Date de fabrication pas encore localisee avec certitude (voir le commentaire en tete de
+        // DecodeurElegoo.kt) : on ne l'affiche pas plutot que d'inventer une valeur.
+        info.matiereTexte?.let { ajouterLigneInfo(R.drawable.ic_bobine, "Matière : $it") }
         info.couleurHex?.let { ajouterLigneInfo(R.drawable.ic_couleur, "Couleur : #$it") }
         info.poidsGrammes?.let { ajouterLigneInfo(R.drawable.ic_materiau, "Poids bobine : ${it}g") }
         info.diametreMm?.let { ajouterLigneInfo(R.drawable.ic_temperature, "Diamètre : ${it}mm") }
 
         val resume = StringBuilder()
+        info.matiereTexte?.let { resume.appendLine("Matière : $it") }
         info.couleurHex?.let { resume.appendLine("Couleur : #$it") }
         info.poidsGrammes?.let { resume.appendLine("Poids : ${it}g") }
         info.diametreMm?.let { resume.appendLine("Diamètre : ${it}mm") }
@@ -562,9 +564,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Importe un dump exporte precedemment (le meme fichier .txt que exporterDump() produit, sur
-     * CET appareil ou un autre) pour pouvoir cloner sans avoir la bobine source physique sous la
-     * main au moment du clonage. Ajoute le 08/10/2026 a la demande de Tomyn.
+     * Importe un dump exporte precedemment pour pouvoir cloner sans avoir la bobine source
+     * physique sous la main au moment du clonage. Ajoute le 08/10/2026 a la demande de Tomyn.
+     *
+     * Accepte trois formats (voir extraireDumpDepuisImport) : le .txt que exporterDump() produit,
+     * un .bin brut ou un .hex (chaine hexadecimale brute) venant d'un editeur externe comme
+     * elegoo-rfid-editor - utile par exemple pour le filament recycle au Lyman, ou le fournisseur
+     * d'origine n'a jamais pose de tag RFID.
      */
     private fun importerDump() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
@@ -603,6 +609,40 @@ class MainActivity : AppCompatActivity() {
         val resultat = ByteArray(pages.size * 4)
         pages.forEachIndexed { index, octets -> octets.copyInto(resultat, index * 4) }
         return resultat
+    }
+
+    /**
+     * Extrait un dump exploitable depuis les octets bruts d'un fichier importe, en essayant
+     * plusieurs formats dans l'ordre (le premier qui correspond gagne) :
+     *   1. Notre propre export .txt (lignes "Page XX : AA BB CC DD") - voir parserDumpHex.
+     *   2. Un .hex brut : une seule chaine de caracteres hexadecimaux (espaces/retours a la ligne
+     *      ignores), format "Hex" de l'editeur elegoo-rfid-editor.
+     *   3. Un .bin brut : les octets du fichier SONT directement le dump (format "Binary" du
+     *      meme editeur), aucun parsing necessaire.
+     * Retourne null si aucun des trois ne donne un dump assez long pour cloner.
+     */
+    private fun extraireDumpDepuisImport(octetsBruts: ByteArray): ByteArray? {
+        val texte = octetsBruts.toString(Charsets.UTF_8)
+
+        parserDumpHex(texte)?.let { return it }
+
+        val hexNettoye = texte.filter { !it.isWhitespace() }
+        if (hexNettoye.isNotEmpty() && hexNettoye.length % 2 == 0 &&
+            hexNettoye.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }
+        ) {
+            try {
+                return ByteArray(hexNettoye.length / 2) { i ->
+                    hexNettoye.substring(i * 2, i * 2 + 2).toInt(16).toByte()
+                }
+            } catch (e: NumberFormatException) {
+                // Ressemblait a de l'hexa mais ne s'est pas decode proprement : on continue avec
+                // le fichier binaire brut ci-dessous plutot que d'abandonner tout de suite.
+            }
+        }
+
+        if (octetsBruts.size >= ClonageElegoo.TAILLE_MIN_DUMP_SOURCE) return octetsBruts
+
+        return null
     }
 
     private fun exporterVers(nomSuggere: String, contenu: String, typeMime: String) {
@@ -645,11 +685,11 @@ class MainActivity : AppCompatActivity() {
                 val uri = data?.data
                 if (resultCode != RESULT_OK || uri == null) return
                 try {
-                    val texte = contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                    val octetsBruts = contentResolver.openInputStream(uri)?.use { it.readBytes() }
                         ?: throw IOException("fichier inaccessible")
-                    val dump = parserDumpHex(texte)
+                    val dump = extraireDumpDepuisImport(octetsBruts)
                     if (dump == null || dump.size < ClonageElegoo.TAILLE_MIN_DUMP_SOURCE) {
-                        Toast.makeText(this, "Fichier non reconnu : ce n'est pas un dump exporté par cette appli, ou il est incomplet.", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this, "Fichier non reconnu : ni un dump exporté par cette appli, ni un .bin/.hex valide.", Toast.LENGTH_LONG).show()
                         return
                     }
                     dernierDumpBrut = dump

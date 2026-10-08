@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.9-import-bin-hex (build 9)
+
+**Import élargi aux fichiers `.bin` et `.hex` d'éditeurs externes**, à la demande de Damdam2959 :
+jusqu'ici "Importer un dump pour cloner" ne relisait que le `.txt` exporté par cette appli. Utile
+en particulier pour les tags "maison" qu'il compte créer pour son propre filament recyclé (Lyman)
+via [elegoo-rfid-editor](https://github.com/Savion/elegoo-rfid-editor), qui exporte en `.bin` ou
+en `.hex` plutôt qu'au format `.txt` de cette appli.
+
+- L'import essaie maintenant trois formats dans l'ordre : notre `.txt` existant, une chaîne
+  hexadécimale brute (`.hex`), puis en dernier recours les octets bruts du fichier tels quels
+  (`.bin`) — le premier qui correspond est utilisé, sans que l'utilisateur ait à préciser le
+  format.
+- Vérifié par compilation réelle (kotlinc + stubs Android) : zéro erreur.
+
+## v0.8-matiere-decodee (build 8)
+
+**Matière et sous-type enfin décodés**, confirmés par Damdam2959 (08/10/2026) : trouvée grâce à
+un éditeur open-source de tags Elegoo ([elegoo-rfid-editor](https://github.com/Savion/elegoo-rfid-editor))
+qui liste directement la table de correspondance dans son code source. En comparant 6 fichiers
+générés par cet outil (PLA, PETG, ABS, ASA, TPU, à couleur identique), les deux champs tombent
+exactement aux offsets indiqués par cet éditeur (page 0x12 pour le code matière sur 4 octets,
+page 0x13 pour le code sous-type sur 2 octets) — confirmé notamment par le fichier TPU généré par
+Damdam2959, dont le sous-type décodé (0x0302 = "RAPID TPU 95A") correspondait exactement au nom de
+fichier qu'il avait choisi dans l'éditeur.
+
+- Nouvelle ligne "Matière : ..." affichée dans les résultats (ex. "PETG", "RAPID TPU 95A").
+- Table de correspondance complète dans `MaterialsElegoo.kt` : ~15 familles de matière, ~50
+  sous-types, directement portée depuis le code source de l'éditeur.
+- Reste non confirmé : la date de fabrication.
+- Vérifié par compilation réelle (kotlinc + stubs Android) : zéro erreur.
+
 ## v0.7-import-dump (build 7)
 
 **Nouveau bouton "Importer un dump pour cloner"**, idée de Damdam2959 : jusqu'ici le clonage

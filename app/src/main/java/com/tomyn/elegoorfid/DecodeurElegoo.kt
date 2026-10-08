@@ -23,19 +23,23 @@ package com.tomyn.elegoorfid
  *   page 0x17, octets 1-2  Diametre, centiemes de mm (00AF = 1.75mm dans les deux cas)
  *   page 0x17-0x18         Poids, grammes (03E8 = 1000g dans les deux cas)
  *
- * CE QUI N'EST PAS ENCORE CONFIRME : matiere, sous-type et date de fabrication. Les deux
- * echantillons etant tous les deux du PLA (meme matiere), rien ne permet de distinguer "la bonne
- * position pour la matiere" d'un simple bloc constant sans rapport avec elle - les 11 octets
- * entre le code fabricant et la couleur sont identiques sur les deux dumps (00 00 00 00 80 76 65
- * 00 00 00 00), sans correspondre a du texte ASCII lisible. Il faudrait un dump d'une AUTRE
- * matiere (PETG, ABS...) pour verifier par comparaison, exactement comme pour la couleur. En
- * attendant, ces champs renvoient null plutot qu'une valeur devinee.
+ * MATIERE ET SOUS-TYPE (ajoute le 08/10/2026) : confirmes par comparaison de 5 fichiers generes
+ * par l'editeur open-source "elegoo-rfid-editor" (github.com/Savion/elegoo-rfid-editor), tous a
+ * la meme couleur, un par matiere (PLA, PETG, ABS, ASA, TPU). Le code matiere (4 octets, page
+ * 0x12) et le code sous-type (2 octets, page 0x13) correspondent exactement a la table donnee
+ * dans le code source de cet editeur (src/lib/materials.ts) - voir MaterialsElegoo.kt. Le code
+ * sous-type du fichier TPU genere par l'utilisateur (0x0302) correspondait meme exactement au nom
+ * de fichier qu'il avait choisi ("RAPID_TPU_95A"), confirmation supplementaire que l'offset et la
+ * table sont les bons.
+ *
+ * CE QUI N'EST TOUJOURS PAS CONFIRME : date de fabrication.
  */
 object DecodeurElegoo {
 
     data class InfoBobine(
         val headerValide: Boolean?,     // true si l'octet d'en-tete vaut bien 0x36 (signature du format)
         val codeFabricant: String?,
+        val matiereTexte: String?,      // ex. "PETG", "RAPID TPU 95A" - null si code non reconnu
         val couleurHex: String?,        // RGB888 brut, ex. "106DD7" - directement exploitable, pas de table a deviner
         val diametreMm: Double?,
         val poidsGrammes: Int?
@@ -46,6 +50,13 @@ object DecodeurElegoo {
         return ((d[off].toInt() and 0xFF) shl 8) or (d[off + 1].toInt() and 0xFF)
     }
 
+    private fun u32(d: ByteArray, off: Int): Long? {
+        if (off + 3 >= d.size) return null
+        var resultat = 0L
+        for (i in 0..3) resultat = (resultat shl 8) or (d[off + i].toLong() and 0xFF)
+        return resultat
+    }
+
     /**
      * @param dump octets bruts du tag, page 0 (UID) en premier. Doit couvrir au moins jusqu'a
      *             l'octet 95 (fin de la page 0x17) pour obtenir tous les champs ; un dump plus
@@ -54,6 +65,9 @@ object DecodeurElegoo {
     fun decoder(dump: ByteArray): InfoBobine {
         val entete = if (dump.size > 64) (dump[64].toInt() and 0xFF) == 0x36 else null
         val fabricant = if (dump.size >= 69) dump.copyOfRange(65, 69).joinToString(":") { "%02X".format(it) } else null
+        val codeMatiere = u32(dump, 72)
+        val codeSousType = u16(dump, 76)
+        val matiere = MaterialsElegoo.resoudreTexteMatiere(codeMatiere, codeSousType)
         val couleur = if (dump.size >= 83) dump.copyOfRange(80, 83).joinToString("") { "%02X".format(it) } else null
         val diametreBrut = u16(dump, 92)
         val poids = u16(dump, 94)
@@ -61,6 +75,7 @@ object DecodeurElegoo {
         return InfoBobine(
             headerValide = entete,
             codeFabricant = fabricant,
+            matiereTexte = matiere,
             couleurHex = couleur,
             diametreMm = diametreBrut?.let { it / 100.0 },
             poidsGrammes = poids
