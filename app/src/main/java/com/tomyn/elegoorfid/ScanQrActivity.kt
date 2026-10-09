@@ -10,6 +10,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import android.util.Size
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
@@ -111,7 +112,7 @@ class ScanQrActivity : AppCompatActivity() {
                 // camera-core:1.3.4 de ce projet, aucune version a changer.
                 val selecteurResolution = ResolutionSelector.Builder()
                     .setResolutionStrategy(
-                        ResolutionStrategy(Size(1280, 960), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER)
+                        ResolutionStrategy(Size(1920, 1440), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER)
                     )
                     .build()
                 val analyse = ImageAnalysis.Builder()
@@ -120,7 +121,21 @@ class ScanQrActivity : AppCompatActivity() {
                     .build()
                 analyse.setAnalyzer(executeurAnalyse) { image -> analyserImage(image) }
                 fournisseur.unbindAll()
-                fournisseur.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analyse)
+                val camera = fournisseur.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analyse)
+
+                // Mise au point forcee au centre de l'apercu (ajoute le 10/10/2026, suite au
+                // retour de Damdam2959 : ca ne detecte plus "qu'une fois sur trois" et seulement
+                // en restant parfaitement immobile - signe typique d'une image pas franchement
+                // nette plutot que d'un probleme de resolution, deja traite au-dessus). Sans ca,
+                // l'autofocus continu par defaut de CameraX peut rester flou ou continuer a
+                // chercher sa mise au point sur une etiquette tenue de pres, pile le cas d'usage
+                // ici (texte/QR minuscules a quelques centimetres). Declencher explicitement la
+                // mise au point sur le centre du cadre, ou se trouve toujours le QR vise, lui
+                // donne une cible claire plutot que de deviner sur toute la scene.
+                val pointCentral = previewView.meteringPointFactory.createPoint(
+                    previewView.width / 2f, previewView.height / 2f
+                )
+                camera.cameraControl.startFocusAndMetering(FocusMeteringAction.Builder(pointCentral).build())
             } catch (e: Exception) {
                 Toast.makeText(this, "Impossible de démarrer la caméra : ${e.message}", Toast.LENGTH_LONG).show()
                 finish()

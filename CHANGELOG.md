@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.37-fix-mise-au-point-scanner (build 37)
+
+Suite au retour de Damdam2959 sur la v0.36 : mieux, mais ça ne détecte plus "qu'une fois sur
+trois", et seulement en restant parfaitement immobile. Ce symptôme précis (ça marche, mais
+seulement sans bouger du tout) est le signe typique d'une image pas franchement nette plutôt que
+d'un problème de résolution (déjà traité en v0.36) - l'autofocus continu par défaut de CameraX peut
+rester flou ou continuer à chercher sa mise au point sur une étiquette tenue à quelques
+centimètres, pile le cas d'usage ici (texte/QR minuscules de près).
+
+**Corrigé** (`ScanQrActivity.demarrerCamera`) : déclenchement explicite d'une mise au point sur le
+centre de l'aperçu (`Camera.cameraControl.startFocusAndMetering`, API CameraX officielle) dès que
+la caméra démarre - plutôt que de laisser l'autofocus deviner sur toute la scène, on lui donne une
+cible claire à l'endroit où le QR est toujours visé. Résolution d'analyse également remontée à
+1920×1440 (1280×960 en v0.36) au passage.
+
+Vérifié par compilation réelle (zéro erreur ; nouveaux stubs `CameraControl`/`FocusMeteringAction`/
+`MeteringPoint`/`MeteringPointFactory`/`View.width`/`View.height`), par les 23 fichiers XML passés
+dans un vrai parseur XML, et par les trois suites de tests unitaires existantes (zéro régression).
+**Toujours pas vérifié en conditions réelles** (pas de téléphone/caméra disponibles ici) - cette
+hypothèse correspond bien au symptôme ("marche seulement immobile"), mais reste à confirmer par
+Damdam2959. Si ça ne suffit toujours pas, l'étape suivante serait probablement d'augmenter encore
+la résolution d'analyse, ou d'accepter que le scanner intégré reste en retrait d'un lecteur externe
+dédié pour ce genre de QR dense tenu de très près.
+
 ## v0.36-fix-resolution-scanner (build 36)
 
 Bonne nouvelle du retour de Damdam2959 sur la v0.35 : **le QR scanne maintenant correctement avec
