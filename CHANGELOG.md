@@ -1,5 +1,43 @@
 # Changelog
 
+## v0.30-import-base-filaments (build 30)
+
+Nouvel écran "Importer depuis une base de données" (`ImportBaseDonneesActivity.kt`, nouveau bouton
+sur l'écran principal) - proposée par Damdam2959, qui a trouvé en ligne 36 fichiers JSON de bases
+de filaments (un par fabricant : Elegoo, eSun, Overture, Hatchbox, Inland, Extrudr, Fusion...) et
+demandé si l'appli pouvait en générer des tags directement, sans tout ressaisir à la main dans
+"Créer un tag personnalisé".
+
+Fonctionnement : Damdam2959 choisit un ou plusieurs fichiers JSON (sélecteur multi-fichiers
+standard Android - ouvrir son dossier et tout sélectionner d'un coup fonctionne aussi bien que
+choisir un seul fichier à la fois) ; les fichiers choisis sont mémorisés
+(`GestionnaireParametres.lireSourcesBaseJson`/`ecrireSourcesBaseJson`) pour ne pas avoir à les
+reselectionner à chaque lancement, une nouvelle sélection s'ajoutant aux précédentes plutôt que de
+les remplacer. Ensuite : fabricant → gamme → couleurs à cocher, génération en lot via le même
+circuit que le clonage par lot existant (`MainActivity.demarrerLotAvecValides`).
+
+Trois incompatibilités réelles entre ce format JSON communautaire et le format de tag Elegoo
+(une seule couleur RGB, pas de "température plateau", une liste fixe de matières/sous-types), gérées
+en grisant l'information plutôt qu'en l'inventant :
+- **matière sans équivalent Elegoo** (`MaterialsJsonMapping.kt`) : rapprochement en deux niveaux -
+  exact quand le texte JSON correspond pile à un nom de la table (`PA6-CF`, `PCTG`, `PPS-CF`...),
+  approximatif quand c'est une variante proche d'une famille connue mais sans sous-type exact
+  (`ABS+`, `EASYASA`, `TPU-85A`..., alors ramenée au sous-type générique de sa famille, toujours
+  signalé "approx." à l'écran) - le reste (`PCPBT`, `GREENTEC`, `FLAX`, `PEARL`, `BIOFUSION`...)
+  n'a aucun équivalent et la gamme entière est grisée plutôt que de deviner.
+- **couleur en dégradé** (`"hexes"` + `multi_color_direction`, un tag Elegoo n'a qu'un seul champ
+  couleur) : cette couleur précise est grisée individuellement, même dans une gamme par ailleurs
+  supportée.
+- **température/poids/diamètre absent du fichier** (ex. NTH Grillon, qui n'a aucun champ
+  température) : gamme grisée plutôt que d'écrire 0 sur le tag.
+
+Parseur JSON écrit à la main (`MiniJson.kt`) plutôt que d'utiliser `org.json` : cette dernière fait
+partie du framework Android (toujours présente sur un vrai téléphone) mais pas du JDK standard,
+donc indisponible pour les tests unitaires locaux de ce projet (`kotlinc` hors Android, voir
+`tests/TestFilamentDatabase.kt`, qui tourne sur 10 des 36 fichiers réels couvrant chaque cas
+particulier : température simple vs plage, hex à 8 caractères avec alpha, dégradé mêlé à des
+couleurs normales dans la même gamme, fichier sans aucune température).
+
 ## v0.29-scan-qr-camera (build 29)
 
 Scan du QR des étiquettes directement depuis l'appareil photo de l'appli (`ScanQrActivity.kt`,

@@ -20,8 +20,8 @@ android {
         applicationId "com.tomyn.elegoorfid"
         minSdk 26
         targetSdk 34
-        versionCode 29
-        versionName "0.29-scan-qr-camera"
+        versionCode 30
+        versionName "0.30-import-base-filaments"
     }
 
     buildTypes {

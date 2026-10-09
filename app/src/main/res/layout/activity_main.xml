@@ -213,6 +213,20 @@
             android:textAllCaps="false"
             android:textSize="13sp" />
 
+        <!-- Import depuis une base de donnees JSON (ajoute le 09/10/2026 a la demande de Tomyn,
+             suite aux fichiers de bases de filaments communautaires qu'il a fournis) : ouvre
+             ImportBaseDonneesActivity, voir FilamentDatabase.kt et MaterialsJsonMapping.kt. -->
+        <Button
+            android:id="@+id/btnImporterBase"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/fond_bouton_secondaire"
+            android:text="Importer depuis une base de données"
+            android:textColor="@color/texte_principal"
+            android:textAllCaps="false"
+            android:textSize="13sp" />
+
         <!-- Import (ajoute le 08/10/2026) : permet de charger un dump exporte precedemment
              (depuis n'importe quel appareil) sans avoir besoin de la bobine source physique au
              moment du clonage - utile pour cloner plus tard, ou cloner a partir d'une bobine

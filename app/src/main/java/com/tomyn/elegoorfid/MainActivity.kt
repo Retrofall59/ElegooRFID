@@ -127,6 +127,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnCreerTag).setOnClickListener {
             startActivityForResult(Intent(this, CreationTagActivity::class.java), CODE_CREATION)
         }
+        findViewById<Button>(R.id.btnImporterBase).setOnClickListener {
+            startActivityForResult(Intent(this, ImportBaseDonneesActivity::class.java), CODE_IMPORT_BASE)
+        }
         findViewById<Button>(R.id.btnExporter).setOnClickListener { exporterDump() }
         findViewById<Button>(R.id.btnImporterDump).apply {
             setOnClickListener { importerDump() }
@@ -1234,6 +1237,21 @@ class MainActivity : AppCompatActivity() {
                 afficherResultats(info, dump, statutTexte = "Tag personnalisé créé — prêt à cloner sur une bobine vierge", enregistrerHistorique = false, origine = PlancheEtiquettes.ORIGINE_CREATION)
                 Toast.makeText(this, "Tag créé. Appuie sur \"Cloner sur une bobine vierge\".", Toast.LENGTH_LONG).show()
             }
+            CODE_IMPORT_BASE -> {
+                if (resultCode != RESULT_OK) return
+                // Voir ImportBaseDonneesActivity.dumpsGeneres : passe par un champ statique
+                // plutot que par les extras de l'Intent (simple liste de (nom, ByteArray), pas
+                // besoin de Parcelable). Reutilise tel quel le flux de clonage par lot
+                // (demarrerLotAvecValides) - fonctionne aussi bien pour un seul tag que pour
+                // plusieurs couleurs generees d'un coup.
+                val valides = ImportBaseDonneesActivity.dumpsGeneres
+                ImportBaseDonneesActivity.dumpsGeneres = emptyList()
+                if (valides.isEmpty()) {
+                    Toast.makeText(this, "Import interrompu (l'appli a été relancée), recommence.", Toast.LENGTH_LONG).show()
+                    return
+                }
+                demarrerLotAvecValides(valides)
+            }
             CODE_IMPORT_LOT -> {
                 if (resultCode != RESULT_OK) return
                 val uris = mutableListOf<android.net.Uri>()
@@ -1794,6 +1812,7 @@ class MainActivity : AppCompatActivity() {
         const val CODE_CREATION = 4714
         const val CODE_IMPORT_LOT = 4715
         const val CODE_SCAN_QR = 4716
+        const val CODE_IMPORT_BASE = 4717
         // Affichage de l'historique limite aux N scans les plus recents (v0.28, voir
         // afficherHistorique) - "Exporter/Partager" reste le moyen de tout recuperer au-dela.
         const val LIMITE_AFFICHAGE_HISTORIQUE = 50
