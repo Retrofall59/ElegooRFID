@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.27-backup-reglages-coller-dump-filtre-date (build 27)
+
+Trois améliorations proposées par Claude, validées par Damdam2959 ("ok pour les trois") :
+
+**1. Sauvegarde/restauration des réglages** (`GestionnaireParametres.exporterReglages`/
+`importerReglages`, écran Paramètres) : export/import d'un petit fichier texte (vibration, son,
+grille d'étiquettes) via le sélecteur de fichiers Android, pour ne pas tout reconfigurer à la main
+en cas de changement de téléphone ou de réinstallation. Format volontairement simple
+(`clé=valeur`, une ligne par réglage) plutôt que du JSON - aucune dépendance supplémentaire, et
+relisible à l'œil si besoin. L'import ignore les lignes non reconnues plutôt que de tout rejeter
+(tolérant à une sauvegarde partielle ou faite par une version antérieure).
+
+**2. Coller un dump hex depuis le presse-papier** (`MainActivity.collerDumpDepuisPressePapier`,
+appui long sur "Importer un dump pour cloner") : symétrique du "copier le dump" de la v0.26.
+Pratique si quelqu'un partage un dump en texte sur le forum lesimprimantes3d.fr plutôt qu'en
+fichier - évite de devoir l'enregistrer dans un .txt avant de pouvoir l'importer. Même validation
+d'en-tête (avertissement si suspect) que l'import fichier - la logique de validation a été
+factorisée (`traiterDumpImporte`) entre les deux chemins plutôt que dupliquée.
+
+**3. Filtrer l'historique par plage de dates** (`MainActivity.demanderFiltreDateHistorique`) : en
+complément du filtre texte de la v0.21 (matière, couleur, code fabricant...), un filtre "Du ... au
+..." (JJ/MM/AAAA, l'un des deux bornes pouvant rester vide) pour retrouver les scans d'une session
+de tri précise. Saisie texte plutôt qu'un vrai sélecteur de date Android (`DatePickerDialog`) -
+plus simple, cohérent avec le reste de l'appli, et pas de nouveau stub lourd à maintenir pour cette
+vérification.
+
+Vérifié par compilation réelle (zéro erreur ; stubs `ClipboardManager.primaryClip`,
+`ClipData.Item.text` ajoutés), par les 22 fichiers XML passés dans un vrai parseur XML, et par les
+tests unitaires du décodeur (zéro régression). **Non testé en conditions réelles** : le
+comportement de l'appui long sur "Importer un dump" sur un vrai `Button` (pas de conflit avec
+l'appui simple), et le bon fonctionnement du sélecteur de fichiers pour la sauvegarde des réglages
+sur un vrai téléphone.
+
 ## v0.26-vibration-partage-historique-copie-dump (build 26)
 
 Trois améliorations proposées par Claude, validées par Damdam2959 ("ok pour les trois") :

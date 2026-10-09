@@ -41,11 +41,13 @@ son code source la table de correspondance et annote chaque page dans son édite
 
 Lecture (écran maintenu allumé pendant le scan - v0.23), copier/partager, **copier le dump brut en
 hexadécimal séparément (appui long sur "Copier") - v0.26**, export **et import** du dump brut
-(en-tête vérifié avant clonage, avec avertissement si absent - v0.23), historique des scans
-**filtrable** (matière, couleur, code fabricant... - v0.21) et **partageable directement par mail/
-Drive - v0.26**, rapport de compatibilité, gestion du NFC désactivé, réglage de la vibration **et
-du son** de fin de lecture (bip **et vibration** différents succès/erreur - v0.21, vibration
-d'échec ajoutée en v0.26), **impression d'étiquettes** (v0.15, grille **réglable** dans les
+(en-tête vérifié avant clonage, avec avertissement si absent - v0.23, **ou collé directement
+depuis le presse-papier par appui long sur "Importer" - v0.27**), historique des scans
+**filtrable** (matière, couleur, code fabricant... - v0.21, **ou par plage de dates - v0.27**) et
+**partageable directement par mail/Drive - v0.26**, rapport de compatibilité, gestion du NFC
+désactivé, réglage de la vibration **et du son** de fin de lecture (bip **et vibration** différents
+succès/erreur - v0.21, vibration d'échec ajoutée en v0.26), **sauvegarde/restauration des réglages
+en un fichier - v0.27**, **impression d'étiquettes** (v0.15, grille **réglable** dans les
 Paramètres - 3×8 par page A4 par défaut - v0.23, voir `PlancheEtiquettes.kt`), exportable en PDF
 **ou imprimable/partageable directement** (fenêtre d'impression Android sur une imprimante Wi-Fi -
 v0.20, ou envoi du PDF par mail/Drive/etc. - v0.24, voir `ImpressionPlanche.kt`), avec un QR de

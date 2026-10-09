@@ -128,7 +128,12 @@ class MainActivity : AppCompatActivity() {
             startActivityForResult(Intent(this, CreationTagActivity::class.java), CODE_CREATION)
         }
         findViewById<Button>(R.id.btnExporter).setOnClickListener { exporterDump() }
-        findViewById<Button>(R.id.btnImporterDump).setOnClickListener { importerDump() }
+        findViewById<Button>(R.id.btnImporterDump).apply {
+            setOnClickListener { importerDump() }
+            // Appui long = coller un dump depuis le presse-papier (v0.27), symetrique de l'appui
+            // long "Copier" -> "copier le dump" ajoute en v0.26 - voir collerDumpDepuisPressePapier().
+            setOnLongClickListener { collerDumpDepuisPressePapier(); true }
+        }
         findViewById<Button>(R.id.btnCopier).apply {
             setOnClickListener { copierResume() }
             // Appui long = copier le dump brut en hexa (v0.26) plutot que le resume - voir
@@ -1056,6 +1061,47 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * Extrait et valide un dump importe (meme logique pour un fichier ou un texte colle depuis le
+     * presse-papier, voir CODE_IMPORT et collerDumpDepuisPressePapier) - factorise en v0.26 pour
+     * ne pas dupliquer la verification d'en-tete (avertissement ajoute en v0.23).
+     */
+    private fun traiterDumpImporte(octetsBruts: ByteArray, messageEchecFormat: String) {
+        val dump = extraireDumpDepuisImport(octetsBruts)
+        if (dump == null || dump.size < ClonageElegoo.TAILLE_MIN_DUMP_SOURCE) {
+            Toast.makeText(this, messageEchecFormat, Toast.LENGTH_LONG).show()
+            return
+        }
+        if (DecodeurElegoo.decoder(dump).headerValide != true) {
+            AlertDialog.Builder(this)
+                .setTitle("Dump suspect")
+                .setMessage("La taille est correcte, mais l'en-tête attendu (0x36) pour un dump Elegoo est absent. Le dump est peut-être corrompu ou dans un autre format.\n\nContinuer quand même avant de cloner ?")
+                .setPositiveButton("Continuer quand même") { _, _ -> accepterDumpImporte(dump) }
+                .setNegativeButton("Annuler", null)
+                .show()
+            return
+        }
+        accepterDumpImporte(dump)
+    }
+
+    /**
+     * Colle un dump depuis le presse-papier (ajoute en v0.27 a la demande de Tomyn, en miroir du
+     * "copier le dump" de la v0.26) : pratique si quelqu'un partage un dump en texte (collé dans
+     * un message du forum lesimprimantes3d.fr, par exemple) plutot qu'en fichier - evite de devoir
+     * d'abord l'enregistrer dans un .txt pour pouvoir l'importer. Accepte les memes formats que
+     * l'import fichier (voir extraireDumpDepuisImport) puisque le texte colle est traite exactement
+     * comme le contenu d'un fichier texte.
+     */
+    private fun collerDumpDepuisPressePapier() {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val texte = clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()
+        if (texte.isNullOrBlank()) {
+            Toast.makeText(this, "Le presse-papier est vide.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        traiterDumpImporte(texte.toByteArray(Charsets.UTF_8), "Presse-papier non reconnu : ni un dump exporté par cette appli, ni un .hex valide.")
+    }
+
+    /**
      * Relit le texte d'un fichier importe et en extrait le dump brut, au format produit par
      * formaterDumpHex() (lignes "Page XX : AA BB CC DD", a partir de la page 0). Les eventuelles
      * lignes de resume avant/apres (couleur, poids...) sont ignorees - seules les lignes "Page "
@@ -1158,26 +1204,7 @@ class MainActivity : AppCompatActivity() {
                 try {
                     val octetsBruts = contentResolver.openInputStream(uri)?.use { it.readBytes() }
                         ?: throw IOException("fichier inaccessible")
-                    val dump = extraireDumpDepuisImport(octetsBruts)
-                    if (dump == null || dump.size < ClonageElegoo.TAILLE_MIN_DUMP_SOURCE) {
-                        Toast.makeText(this, "Fichier non reconnu : ni un dump exporté par cette appli, ni un .bin/.hex valide.", Toast.LENGTH_LONG).show()
-                        return
-                    }
-                    if (DecodeurElegoo.decoder(dump).headerValide != true) {
-                        // Avertissement (ajoute en v0.23 a la demande de Tomyn), pas un blocage
-                        // pur : la taille seule ne suffit pas a garantir que le fichier est un
-                        // vrai dump Elegoo (corrompu, tronque autrement, ou simplement un autre
-                        // format de meme taille) - mais certains usages volontaires (filament
-                        // recycle maison, test) peuvent justifier de continuer malgre tout.
-                        AlertDialog.Builder(this)
-                            .setTitle("Fichier importé suspect")
-                            .setMessage("La taille est correcte, mais l'en-tête attendu (0x36) pour un dump Elegoo est absent. Le fichier est peut-être corrompu ou dans un autre format.\n\nContinuer quand même avant de cloner ?")
-                            .setPositiveButton("Continuer quand même") { _, _ -> accepterDumpImporte(dump) }
-                            .setNegativeButton("Annuler", null)
-                            .show()
-                        return
-                    }
-                    accepterDumpImporte(dump)
+                    traiterDumpImporte(octetsBruts, "Fichier non reconnu : ni un dump exporté par cette appli, ni un .bin/.hex valide.")
                 } catch (e: Exception) {
                     Toast.makeText(this, "Erreur d'import : ${e.message}", Toast.LENGTH_LONG).show()
                 }
@@ -1342,8 +1369,13 @@ class MainActivity : AppCompatActivity() {
      * @param filtre si non vide, ne garde que les lignes dont un champ (matiere, sous-type,
      * couleur, code fabricant, date) contient ce texte (insensible a la casse/accents simples) -
      * ajoute en v0.21 a la demande de Tomyn, l'historique pouvant grossir avec le temps.
+     * @param dateDebut/dateFin si non nuls, ne garde que les lignes dont la date (JJ/MM/AAAA, voir
+     * enregistrerDansHistorique) tombe dans cette plage, bornes incluses - ajoute en v0.27, en
+     * complement du filtre texte (utile pour retrouver les scans d'une session de tri precise
+     * plutot qu'une matiere/couleur). Les deux filtres ne se combinent pas (voir
+     * demanderFiltreDateHistorique) - rester simple plutot que de gerer toutes les combinaisons.
      */
-    private fun afficherHistorique(filtre: String? = null) {
+    private fun afficherHistorique(filtre: String? = null, dateDebut: Date? = null, dateFin: Date? = null) {
         try {
             val fichier = File(getExternalFilesDir(null), "historique_scans.csv")
             if (!fichier.exists() || fichier.readText().isBlank()) {
@@ -1356,16 +1388,28 @@ class MainActivity : AppCompatActivity() {
             }
             val toutesLesLignes = fichier.readLines().reversed().mapNotNull { parserLigneHistorique(it) }
             val filtreNettoye = filtre?.trim()?.lowercase(Locale.FRANCE)
-            val lignes = if (filtreNettoye.isNullOrBlank()) {
-                toutesLesLignes
-            } else {
-                toutesLesLignes.filter { it.texteBrut.lowercase(Locale.FRANCE).contains(filtreNettoye) }
+            val formatDateHeure = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE)
+            val lignes = when {
+                dateDebut != null || dateFin != null -> toutesLesLignes.filter { ligne ->
+                    val dateLigne = try { formatDateHeure.parse(ligne.date) } catch (e: Exception) { null } ?: return@filter false
+                    (dateDebut == null || !dateLigne.before(dateDebut)) && (dateFin == null || !dateLigne.after(dateFin))
+                }
+                filtreNettoye.isNullOrBlank() -> toutesLesLignes
+                else -> toutesLesLignes.filter { it.texteBrut.lowercase(Locale.FRANCE).contains(filtreNettoye) }
+            }
+            val descriptionFiltre = when {
+                dateDebut != null || dateFin != null -> {
+                    val fmt = SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE)
+                    "du ${dateDebut?.let { fmt.format(it) } ?: "début"} au ${dateFin?.let { fmt.format(it) } ?: "aujourd'hui"}"
+                }
+                !filtreNettoye.isNullOrBlank() -> "« $filtre »"
+                else -> null
             }
 
             if (lignes.isEmpty()) {
                 AlertDialog.Builder(this)
                     .setTitle("Historique des scans")
-                    .setMessage("Aucun résultat pour « $filtre » sur ${toutesLesLignes.size} scan(s) enregistré(s).")
+                    .setMessage("Aucun résultat pour $descriptionFiltre sur ${toutesLesLignes.size} scan(s) enregistré(s).")
                     .setPositiveButton("Nouveau filtre") { _, _ -> demanderFiltreHistorique() }
                     .setNegativeButton("Fermer", null)
                     .show()
@@ -1373,7 +1417,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             val texteAffiche = lignes.joinToString("\n\n") { texteAfficheLigne(it) }
-            val titre = if (filtreNettoye.isNullOrBlank()) {
+            val titre = if (descriptionFiltre == null) {
                 "Historique des scans (${lignes.size})"
             } else {
                 "Historique des scans (${lignes.size}/${toutesLesLignes.size}, filtré)"
@@ -1406,6 +1450,49 @@ class MainActivity : AppCompatActivity() {
             .setView(champ)
             .setPositiveButton("Filtrer") { _, _ -> afficherHistorique(champ.text.toString()) }
             .setNegativeButton("Tout afficher") { _, _ -> afficherHistorique() }
+            .setNeutralButton("Par date") { _, _ -> demanderFiltreDateHistorique() }
+            .show()
+    }
+
+    /**
+     * Filtre par plage de dates (ajoute en v0.27 a la demande de Tomyn, en complement du filtre
+     * texte de la v0.21) : deux champs JJ/MM/AAAA (l'un ou l'autre peut rester vide pour ne pas
+     * borner ce cote-la) plutot qu'un vrai selecteur de date Android (DatePickerDialog) - pas de
+     * stub existant pour ca, et une saisie texte directe reste cohérente avec le reste de
+     * l'appli (champs de la grille d'etiquettes, filtre texte...).
+     */
+    private fun demanderFiltreDateHistorique() {
+        val formatDate = SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE)
+        val champDebut = EditText(this).apply { hint = "Du : JJ/MM/AAAA (optionnel)" }
+        val champFin = EditText(this).apply { hint = "Au : JJ/MM/AAAA (optionnel)" }
+        val conteneur = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(champDebut)
+            addView(champFin)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Filtrer par date")
+            .setView(conteneur)
+            .setPositiveButton("Filtrer") { _, _ ->
+                val texteDebut = champDebut.text.toString().trim()
+                val texteFin = champFin.text.toString().trim()
+                try {
+                    val dateDebut = texteDebut.takeIf { it.isNotBlank() }?.let { formatDate.parse(it) }
+                    val dateFin = texteFin.takeIf { it.isNotBlank() }?.let { formatDate.parse(it) }
+                    if (dateDebut == null && dateFin == null) {
+                        Toast.makeText(this, "Indique au moins une date.", Toast.LENGTH_SHORT).show()
+                        return@setPositiveButton
+                    }
+                    // Borne de fin incluse jusqu'a la fin de la journee (23:59), sinon une date de
+                    // fin exclurait les scans faits ce jour-la (ils ont une heure, pas seulement
+                    // une date - voir enregistrerDansHistorique).
+                    val dateFinIncluse = dateFin?.let { Date(it.time + 24 * 60 * 60 * 1000 - 1) }
+                    afficherHistorique(dateDebut = dateDebut, dateFin = dateFinIncluse)
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Date invalide, utilise le format JJ/MM/AAAA.", Toast.LENGTH_LONG).show()
+                }
+            }
+            .setNegativeButton("Annuler", null)
             .show()
     }
 

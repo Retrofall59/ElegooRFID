@@ -52,4 +52,63 @@ object GestionnaireParametres {
             .putInt(CLE_LIGNES_ETIQUETTES, lignes)
             .apply()
     }
+
+    /**
+     * Sauvegarde/restauration des reglages (ajoute en v0.27 a la demande de Tomyn, pour ne pas
+     * tout reconfigurer a la main en cas de changement de telephone ou de reinstallation). Format
+     * texte volontairement simple ("cle=valeur", une ligne par reglage) plutot que du JSON : pas
+     * de dependance supplementaire (org.json n'est utilise nulle part ailleurs dans l'appli), et
+     * c'est le meme principe que les CSV deja utilises pour l'historique/l'export - facile a
+     * relire a l'oeil si besoin.
+     */
+    private const val CLE_SAUVEGARDE_VIBRATION = "vibration"
+    private const val CLE_SAUVEGARDE_SON = "son"
+    private const val CLE_SAUVEGARDE_COLONNES = "colonnesEtiquettes"
+    private const val CLE_SAUVEGARDE_LIGNES = "lignesEtiquettes"
+
+    fun exporterReglages(context: Context): String {
+        val lignes = listOf(
+            "# ElegooRFID - sauvegarde des reglages",
+            "$CLE_SAUVEGARDE_VIBRATION=${lireVibrationFinLecture(context)}",
+            "$CLE_SAUVEGARDE_SON=${lireSonFinLecture(context)}",
+            "$CLE_SAUVEGARDE_COLONNES=${lireColonnesEtiquettes(context)}",
+            "$CLE_SAUVEGARDE_LIGNES=${lireLignesEtiquettes(context)}"
+        )
+        return lignes.joinToString("\n")
+    }
+
+    /**
+     * @return true si au moins un reglage reconnu a ete restaure, false si le fichier est vide ou
+     * ne contient rien de reconnaissable (fichier corrompu ou sans rapport) - les cles absentes ou
+     * invalides sont simplement ignorees plutot que de faire echouer toute la restauration, pour
+     * rester tolerant a une sauvegarde partielle ou faite par une version anterieure.
+     */
+    fun importerReglages(context: Context, contenu: String): Boolean {
+        var auMoinsUnReglageRestaure = false
+        for (ligne in contenu.lines()) {
+            val ligneNettoyee = ligne.trim()
+            if (ligneNettoyee.isEmpty() || ligneNettoyee.startsWith("#")) continue
+            val separateur = ligneNettoyee.indexOf('=')
+            if (separateur <= 0) continue
+            val cle = ligneNettoyee.substring(0, separateur).trim()
+            val valeur = ligneNettoyee.substring(separateur + 1).trim()
+            when (cle) {
+                CLE_SAUVEGARDE_VIBRATION -> valeur.toBooleanStrictOrNull()?.let { ecrireVibrationFinLecture(context, it); auMoinsUnReglageRestaure = true }
+                CLE_SAUVEGARDE_SON -> valeur.toBooleanStrictOrNull()?.let { ecrireSonFinLecture(context, it); auMoinsUnReglageRestaure = true }
+                CLE_SAUVEGARDE_COLONNES -> valeur.toIntOrNull()?.let {
+                    if (it in 1..COLONNES_ETIQUETTES_MAX) {
+                        ecrireGrilleEtiquettes(context, it, lireLignesEtiquettes(context))
+                        auMoinsUnReglageRestaure = true
+                    }
+                }
+                CLE_SAUVEGARDE_LIGNES -> valeur.toIntOrNull()?.let {
+                    if (it in 1..LIGNES_ETIQUETTES_MAX) {
+                        ecrireGrilleEtiquettes(context, lireColonnesEtiquettes(context), it)
+                        auMoinsUnReglageRestaure = true
+                    }
+                }
+            }
+        }
+        return auMoinsUnReglageRestaure
+    }
 }
