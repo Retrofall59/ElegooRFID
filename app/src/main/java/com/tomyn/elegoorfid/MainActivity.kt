@@ -129,7 +129,12 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<Button>(R.id.btnExporter).setOnClickListener { exporterDump() }
         findViewById<Button>(R.id.btnImporterDump).setOnClickListener { importerDump() }
-        findViewById<Button>(R.id.btnCopier).setOnClickListener { copierResume() }
+        findViewById<Button>(R.id.btnCopier).apply {
+            setOnClickListener { copierResume() }
+            // Appui long = copier le dump brut en hexa (v0.26) plutot que le resume - voir
+            // copierDump(). Pas de nouveau bouton pour ne pas surcharger la rangee existante.
+            setOnLongClickListener { copierDump(); true }
+        }
         findViewById<Button>(R.id.btnPartager).setOnClickListener { partagerResume() }
         findViewById<Button>(R.id.btnHistorique).setOnClickListener { afficherHistorique() }
         findViewById<Button>(R.id.btnRapportCompat).setOnClickListener { copierRapportCompatibilite() }
@@ -253,6 +258,7 @@ class MainActivity : AppCompatActivity() {
             txtStatut.text = "Ce tag n'est pas compatible NFC-A"
             dernierScanReussi = false
             jouerSonResultat(false)
+            if (GestionnaireParametres.lireVibrationFinLecture(this)) vibrerEchec()
             return
         }
 
@@ -268,6 +274,7 @@ class MainActivity : AppCompatActivity() {
                 dernierScanReussi = false
                 dernierDumpTexte = "--- DUMP BRUT ---\n${formaterDumpHex(dump)}"
                 jouerSonResultat(false)
+                if (GestionnaireParametres.lireVibrationFinLecture(this)) vibrerEchec()
                 return
             }
 
@@ -276,6 +283,7 @@ class MainActivity : AppCompatActivity() {
             txtStatut.text = "Erreur de lecture : ${e.message}"
             dernierScanReussi = false
             jouerSonResultat(false)
+            if (GestionnaireParametres.lireVibrationFinLecture(this)) vibrerEchec()
         } finally {
             try { nfcA.close() } catch (e: Exception) { /* rien a faire */ }
         }
@@ -487,6 +495,7 @@ class MainActivity : AppCompatActivity() {
                             ". Réessaie ; si ça persiste sur la même page, elle est peut-être verrouillée."
                     }
                 }
+                if (!reussi && GestionnaireParametres.lireVibrationFinLecture(this)) vibrerEchec()
             }
         } catch (e: Exception) {
             try { nfcA.close() } catch (e2: Exception) { /* rien a faire */ }
@@ -497,6 +506,7 @@ class MainActivity : AppCompatActivity() {
                 btnClonerLot.visibility = View.VISIBLE
                 if (dernierScanReussi) { btnCloner.visibility = View.VISIBLE; btnAjouterPlanche.visibility = View.VISIBLE }
                 txtStatut.text = "Erreur d'effacement : ${e.message} — le tag est peut-être verrouillé ou n'est pas un NTAG213/215."
+                if (GestionnaireParametres.lireVibrationFinLecture(this)) vibrerEchec()
             }
         }
     }
@@ -635,12 +645,18 @@ class MainActivity : AppCompatActivity() {
                     txtStatut.text = "Clonage réussi et vérifié ✓"
                     if (GestionnaireParametres.lireVibrationFinLecture(this)) vibrerConfirmation()
                 }
-                resultat.pageEnEchec != null ->
+                resultat.pageEnEchec != null -> {
                     txtStatut.text = "Écriture interrompue (page 0x%02X non confirmée) — repose le tag bien à plat sans le bouger et réessaie.".format(resultat.pageEnEchec)
-                resultat.erreurMessage != null ->
+                    if (GestionnaireParametres.lireVibrationFinLecture(this)) vibrerEchec()
+                }
+                resultat.erreurMessage != null -> {
                     txtStatut.text = "Erreur d'écriture : ${resultat.erreurMessage} — le tag cible est peut-être verrouillé ou n'est pas un NTAG213/215 vierge."
-                else ->
+                    if (GestionnaireParametres.lireVibrationFinLecture(this)) vibrerEchec()
+                }
+                else -> {
                     txtStatut.text = "Écriture terminée mais la relecture ne correspond pas - clonage probablement incomplet. Réessaie."
+                    if (GestionnaireParametres.lireVibrationFinLecture(this)) vibrerEchec()
+                }
             }
         }
     }
@@ -708,6 +724,7 @@ class MainActivity : AppCompatActivity() {
                     resultat.erreurMessage != null -> resultat.erreurMessage
                     else -> "relecture non conforme"
                 }
+                if (GestionnaireParametres.lireVibrationFinLecture(this)) vibrerEchec()
                 AlertDialog.Builder(this)
                     .setTitle("Échec sur \"$nom\"")
                     .setMessage("$raison\n\nRéessayer ce fichier (sur le même tag ou un autre), passer au suivant, ou annuler le lot ?")
@@ -919,6 +936,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * Vibration d'echec (ajoutee en v0.26 a la demande de Tomyn, en miroir du son different
+     * succes/echec deja present depuis la v0.21) : jusqu'ici la vibration etait identique quel
+     * que soit le resultat (voire absente en cas d'echec), seul le son changeait. Un motif en
+     * deux pulsations courtes, nettement different du simple "bip" de vibrerConfirmation(), pour
+     * distinguer les deux sans avoir a regarder l'ecran. Meme reglage que vibrerConfirmation()
+     * (GestionnaireParametres.lireVibrationFinLecture) - pas de nouveau parametre separe.
+     */
+    private fun vibrerEchec() {
+        try {
+            val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 70, 90, 70), -1))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(longArrayOf(0, 70, 90, 70), -1)
+            }
+        } catch (e: Exception) { /* pas grave si la vibration echoue */ }
+    }
+
+    /**
      * Bip de confirmation en fin de lecture NFC (ajoute en v0.21 a la demande de Tomyn, en plus
      * de la vibration deja reglable) : un son different succes/erreur, utile pour scanner vite
      * sans regarder l'ecran a chaque bobine. ToneGenerator plutot qu'un fichier audio : aucune
@@ -949,6 +986,23 @@ class MainActivity : AppCompatActivity() {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("Résultat Elegoo RFID", dernierResume))
         Toast.makeText(this, "Copié dans le presse-papier.", Toast.LENGTH_SHORT).show()
+    }
+
+    /**
+     * Copie uniquement le dump brut en hexadecimal (ajoute en v0.26 a la demande de Tomyn) : utile
+     * pour coller directement un dump sur le forum lesimprimantes3d.fr en cas de tag mal reconnu,
+     * sans passer par "Exporter" + rouvrir le fichier pour en recuperer le contenu. Different de
+     * copierResume() qui copie le resume lisible (matiere/couleur/poids), pas le dump - accessible
+     * par un appui long sur "Copier" pour ne pas ajouter de bouton supplementaire a l'ecran.
+     */
+    private fun copierDump() {
+        if (dernierDumpTexte.isEmpty()) {
+            Toast.makeText(this, "Rien à copier pour l'instant, scanne d'abord un tag.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Dump Elegoo RFID", dernierDumpTexte))
+        Toast.makeText(this, "Dump brut copié dans le presse-papier.", Toast.LENGTH_SHORT).show()
     }
 
     private fun partagerResume() {
@@ -1332,7 +1386,7 @@ class MainActivity : AppCompatActivity() {
                 .setTitle(titre)
                 .setMessage(texteAffiche)
                 .setPositiveButton("Filtrer") { _, _ -> demanderFiltreHistorique() }
-                .setNeutralButton("Exporter tout") { _, _ -> exporterVers("historique_scans_elegoo.csv", fichier.readText(), "text/csv") }
+                .setNeutralButton("Exporter/Partager") { _, _ -> demanderExportOuPartageHistorique(fichier.readText()) }
                 .setNegativeButton("Vider l'historique") { _, _ ->
                     fichier.delete()
                     Toast.makeText(this, "Historique effacé.", Toast.LENGTH_SHORT).show()
@@ -1353,6 +1407,50 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("Filtrer") { _, _ -> afficherHistorique(champ.text.toString()) }
             .setNegativeButton("Tout afficher") { _, _ -> afficherHistorique() }
             .show()
+    }
+
+    /**
+     * Choix entre enregistrer l'historique dans un fichier (comportement d'origine, via le
+     * selecteur de fichiers Android) et le partager directement (mail, Drive... - ajoute en v0.26
+     * a la demande de Tomyn, en reprenant le mecanisme FileProvider deja utilise pour le partage
+     * du PDF des etiquettes en v0.24). setMessage()+setItems() etant incompatibles sur un vrai
+     * AlertDialog (voir le bug de la planche d'etiquettes corrige en v0.23), ce choix passe par
+     * une boite dediee, separee de celle qui affiche l'historique.
+     */
+    private fun demanderExportOuPartageHistorique(contenuCsv: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Historique : exporter ou partager")
+            .setItems(arrayOf("Enregistrer dans un fichier", "Partager (mail, Drive...)")) { _, index ->
+                when (index) {
+                    0 -> exporterVers("historique_scans_elegoo.csv", contenuCsv, "text/csv")
+                    1 -> partagerHistoriqueCsv(contenuCsv)
+                }
+            }
+            .show()
+    }
+
+    /**
+     * Partage direct du CSV de l'historique (v0.26), meme principe que partagerPlanchePdf() pour
+     * le PDF des etiquettes : ecrit dans un sous-dossier dedie du cache, expose via FileProvider
+     * (un Uri file:// direct est refuse par Android 7+), puis ouvre le selecteur de partage
+     * standard.
+     */
+    private fun partagerHistoriqueCsv(contenuCsv: String) {
+        try {
+            val dossier = File(cacheDir, "csv_partages")
+            if (!dossier.exists()) dossier.mkdirs()
+            val fichier = File(dossier, "historique_scans_elegoo_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(Date()) + ".csv")
+            fichier.writeText(contenuCsv)
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", fichier)
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/csv"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(intent, "Partager l'historique des scans"))
+        } catch (e: Exception) {
+            Toast.makeText(this, "Erreur de partage : ${e.message}", Toast.LENGTH_LONG).show()
+        }
     }
 
     // ============================== PLANCHE D'ETIQUETTES ==============================

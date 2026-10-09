@@ -20,8 +20,8 @@ android {
         applicationId "com.tomyn.elegoorfid"
         minSdk 26
         targetSdk 34
-        versionCode 25
-        versionName "0.25-fix-settings-text"
+        versionCode 26
+        versionName "0.26-vibration-partage-historique-copie-dump"
     }
 
     buildTypes {

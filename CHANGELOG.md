@@ -1,5 +1,39 @@
 # Changelog
 
+## v0.26-vibration-partage-historique-copie-dump (build 26)
+
+Trois améliorations proposées par Claude, validées par Damdam2959 ("ok pour les trois") :
+
+**1. Vibration différenciée succès/échec** (`MainActivity.vibrerEchec`) : le son différenciait déjà
+succès/échec depuis la 0.21, mais la vibration restait soit identique, soit carrément absente en
+cas d'échec (aucune vibration sur un échec de clonage/effacement, par exemple). Nouveau motif en
+deux pulsations courtes (`VibrationEffect.createWaveform`, repli `vibrate(pattern, repeat)` pour
+Android < 8), ajouté à tous les points d'échec existants (lecture NFC-A incompatible, en-tête
+absent, erreur de lecture, clonage interrompu/erreur/relecture incohérente, effacement interrompu/
+incohérent/erreur, échec sur un fichier d'un lot). Même réglage que la vibration de succès
+(`GestionnaireParametres.lireVibrationFinLecture`) - pas de nouveau paramètre séparé.
+
+**2. Partager l'historique des scans** (`MainActivity.partagerHistoriqueCsv`,
+`demanderExportOuPartageHistorique`) : le bouton "Exporter tout" de l'historique ouvrait
+seulement le sélecteur de fichiers Android (enregistrer puis aller chercher le fichier pour
+l'envoyer) - il est remplacé par "Exporter/Partager", qui propose maintenant aussi l'envoi direct
+par mail/Drive/etc., en réutilisant le mécanisme `FileProvider` déjà en place pour le partage du
+PDF des étiquettes (v0.24). Nouveau sous-dossier `csv_partages/` déclaré dans
+`res/xml/file_paths.xml`, à côté de `pdfs_partages/`.
+
+**3. Copier le dump brut en hexadécimal** (`MainActivity.copierDump`) : un appui long sur le
+bouton "Copier" (plutôt qu'un bouton supplémentaire, l'écran principal étant déjà chargé) copie
+maintenant le dump brut dans le presse-papier, séparément du résumé lisible que l'appui simple
+copie déjà. Pratique pour coller directement un dump sur le forum lesimprimantes3d.fr en cas de
+tag mal reconnu, sans passer par "Exporter" puis rouvrir le fichier.
+
+Vérifié par compilation réelle (zéro erreur ; stubs `VibrationEffect.createWaveform`,
+`Vibrator.vibrate(LongArray, Int)` et `View.setOnLongClickListener` ajoutés/complétés), par les 22
+fichiers XML passés dans un vrai parseur XML, et par les tests unitaires du décodeur (zéro
+régression - aucun rapport avec le décodage). **Non testé en conditions réelles** : la sensation
+du motif de vibration sur un vrai téléphone, et le bon fonctionnement de l'appui long sur
+"Copier" (pas de conflit avec l'appui simple) sur un vrai `Button` Android.
+
 ## v0.25-fix-settings-text (build 25)
 
 **Correctif d'un vrai bug remonté par Tomyn en testant la 0.23/0.24** (erreur de compilation

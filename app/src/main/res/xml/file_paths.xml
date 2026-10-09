@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Dossiers exposables via le FileProvider (v0.24, voir AndroidManifest.xml et
-     MainActivity.partagerPlanchePdf) - seul le sous-dossier ou le PDF temporaire de partage est
-     ecrit est liste, rien d'autre du cache de l'appli n'est expose. -->
+     MainActivity.partagerPlanchePdf) - seuls les sous-dossiers ou les fichiers temporaires de
+     partage sont ecrits sont listes, rien d'autre du cache de l'appli n'est expose. -->
 <paths xmlns:android="http://schemas.android.com/apk/res-auto">
     <cache-path name="pdfs_partages" path="pdfs_partages/" />
+    <!-- Partage de l'historique CSV (v0.26, voir MainActivity.partagerHistoriqueCsv). -->
+    <cache-path name="csv_partages" path="csv_partages/" />
 </paths>
