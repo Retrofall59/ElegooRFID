@@ -48,6 +48,20 @@
             android:name=".CreationTagActivity"
             android:exported="false" />
 
+        <!-- Partage du PDF de la planche d'etiquettes (v0.24, voir MainActivity.partagerPlanchePdf)
+             : un Uri file:// direct est refuse (FileUriExposedException) a partir d'Android 7 -
+             FileProvider expose le fichier du cache via un content:// Uri temporaire, lisible
+             seulement par l'appli choisie dans le partage (grantUriPermissions). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
     </application>
 
 </manifest>

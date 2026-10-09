@@ -32,8 +32,8 @@ class SettingsActivity : AppCompatActivity() {
 
         val champColonnes = findViewById<EditText>(R.id.champColonnesEtiquettes)
         val champLignes = findViewById<EditText>(R.id.champLignesEtiquettes)
-        champColonnes.text = GestionnaireParametres.lireColonnesEtiquettes(this).toString()
-        champLignes.text = GestionnaireParametres.lireLignesEtiquettes(this).toString()
+        champColonnes.setText(GestionnaireParametres.lireColonnesEtiquettes(this).toString())
+        champLignes.setText(GestionnaireParametres.lireLignesEtiquettes(this).toString())
         findViewById<Button>(R.id.btnEnregistrerGrilleEtiquettes).setOnClickListener {
             enregistrerGrilleEtiquettes(champColonnes, champLignes)
         }

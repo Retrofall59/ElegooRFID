@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dossiers exposables via le FileProvider (v0.24, voir AndroidManifest.xml et
+     MainActivity.partagerPlanchePdf) - seul le sous-dossier ou le PDF temporaire de partage est
+     ecrit est liste, rien d'autre du cache de l'appli n'est expose. -->
+<paths xmlns:android="http://schemas.android.com/apk/res-auto">
+    <cache-path name="pdfs_partages" path="pdfs_partages/" />
+</paths>

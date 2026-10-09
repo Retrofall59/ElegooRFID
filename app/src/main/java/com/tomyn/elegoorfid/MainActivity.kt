@@ -29,8 +29,10 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -57,6 +59,11 @@ class MainActivity : AppCompatActivity() {
     private var dernierScanReussi = false
     private var contenuAExporter: String? = null
     private var dernierInfoBobine: DecodeurElegoo.InfoBobine? = null
+    // Origine de la derniere bobine affichee (ajoute en v0.24, voir afficherResultats) - sert a
+    // distinguer sur l'etiquette imprimee un vrai scan NFC d'une creation manuelle ou d'une
+    // consultation via QR sans NFC, pour ne pas les confondre plus tard (voir
+    // PlancheEtiquettes.Etiquette.origine).
+    private var derniereOrigineBobine: String = PlancheEtiquettes.ORIGINE_SCAN_NFC
 
     // --- Planche d'etiquettes : voir PlancheEtiquettes.kt. Le PDF genere est ecrit directement
     // sur l'Uri choisi par l'utilisateur au moment ou l'export se concretise (onActivityResult,
@@ -87,7 +94,10 @@ class MainActivity : AppCompatActivity() {
     private var enAttenteTagLot = false
     private var lotAClone: List<Pair<String, ByteArray>> = emptyList()
     private var indexLotCourant = 0
-    private val resultatsLot = mutableListOf<Pair<String, Boolean>>()
+    /** @param detail raison de l'echec (null si reussi) - ajoute en v0.24 pour permettre
+     * l'export CSV du resultat complet d'un lot (voir terminerLot). */
+    private data class ResultatLotLigne(val nom: String, val reussi: Boolean, val detail: String?)
+    private val resultatsLot = mutableListOf<ResultatLotLigne>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -213,7 +223,7 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Étiquette reconnue mais le contenu ne correspond pas à un dump Elegoo valide.", Toast.LENGTH_LONG).show()
             return
         }
-        afficherResultats(info, dump, statutTexte = "Bobine (depuis l'étiquette, sans NFC)", enregistrerHistorique = false)
+        afficherResultats(info, dump, statutTexte = "Bobine (depuis l'étiquette, sans NFC)", enregistrerHistorique = false, origine = PlancheEtiquettes.ORIGINE_QR)
     }
 
     private fun lireTag(tag: Tag) {
@@ -688,7 +698,7 @@ class MainActivity : AppCompatActivity() {
         val resultat = executerClonage(tag, dump)
         runOnUiThread {
             if (resultat.reussi) {
-                resultatsLot.add(nom to true)
+                resultatsLot.add(ResultatLotLigne(nom, true, null))
                 indexLotCourant++
                 if (GestionnaireParametres.lireVibrationFinLecture(this)) vibrerConfirmation()
                 avancerOuTerminerLot()
@@ -705,7 +715,7 @@ class MainActivity : AppCompatActivity() {
                         txtStatut.text = "Approche un tag pour réessayer \"$nom\" (${indexLotCourant + 1}/${lotAClone.size})..."
                     }
                     .setNeutralButton("Passer au suivant") { _, _ ->
-                        resultatsLot.add(nom to false)
+                        resultatsLot.add(ResultatLotLigne(nom, false, raison))
                         indexLotCourant++
                         avancerOuTerminerLot()
                     }
@@ -726,17 +736,32 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun terminerLot() {
-        val reussis = resultatsLot.count { it.second }
+        val reussis = resultatsLot.count { it.reussi }
         val total = resultatsLot.size
-        val echecs = resultatsLot.filter { !it.second }.map { it.first }
+        val echecs = resultatsLot.filter { !it.reussi }.map { it.nom }
         val detail = if (echecs.isNotEmpty()) "\n\nNon clonés : ${echecs.joinToString(", ")}" else ""
+        // Snapshot avant reinitialiserEtatLot() (qui vide resultatsLot juste apres l'appel a
+        // show(), lequel ne bloque pas) - sinon "Exporter" n'aurait plus rien a exporter une fois
+        // tape (ajoute en v0.24 a la demande de Tomyn, pour garder une trace apres un gros lot).
+        val lignesSnapshot = resultatsLot.toList()
         AlertDialog.Builder(this)
             .setTitle("Lot terminé")
             .setMessage("$reussis/$total tag(s) clonés avec succès.$detail")
             .setPositiveButton("OK", null)
+            .setNeutralButton("Exporter le résultat") { _, _ -> exporterResultatLot(lignesSnapshot) }
             .show()
         reinitialiserEtatLot()
         txtStatut.text = "Lot terminé. Approche une bobine Elegoo du dos du téléphone..."
+    }
+
+    private fun exporterResultatLot(lignes: List<ResultatLotLigne>) {
+        val csv = StringBuilder("Fichier;Résultat;Détail\n")
+        for (l in lignes) {
+            val resultatTexte = if (l.reussi) "Réussi" else "Échec"
+            csv.append(listOf(l.nom, resultatTexte, l.detail ?: "").joinToString(";") { it.replace(";", ",") })
+            csv.append("\n")
+        }
+        exporterVers("resultat_lot_elegoo_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(Date()) + ".csv", csv.toString(), "text/csv")
     }
 
     private fun annulerLot() {
@@ -806,11 +831,13 @@ class MainActivity : AppCompatActivity() {
         info: DecodeurElegoo.InfoBobine,
         dump: ByteArray,
         statutTexte: String = "Bobine identifiée",
-        enregistrerHistorique: Boolean = true
+        enregistrerHistorique: Boolean = true,
+        origine: String = PlancheEtiquettes.ORIGINE_SCAN_NFC
     ) {
         dernierScanReussi = true
         dernierDumpBrut = dump
         dernierInfoBobine = info
+        derniereOrigineBobine = origine
         btnCloner.visibility = if (dump.size >= ClonageElegoo.TAILLE_MIN_DUMP_SOURCE) View.VISIBLE else View.GONE
         btnAjouterPlanche.visibility = View.VISIBLE
         txtStatut.text = statutTexte
@@ -1114,7 +1141,7 @@ class MainActivity : AppCompatActivity() {
                 dernieresLignesInfo.clear()
                 vuCouleur.visibility = View.GONE
                 imgNfc.visibility = View.GONE
-                afficherResultats(info, dump, statutTexte = "Tag personnalisé créé — prêt à cloner sur une bobine vierge", enregistrerHistorique = false)
+                afficherResultats(info, dump, statutTexte = "Tag personnalisé créé — prêt à cloner sur une bobine vierge", enregistrerHistorique = false, origine = PlancheEtiquettes.ORIGINE_CREATION)
                 Toast.makeText(this, "Tag créé. Appuie sur \"Cloner sur une bobine vierge\".", Toast.LENGTH_LONG).show()
             }
             CODE_IMPORT_LOT -> {
@@ -1345,7 +1372,7 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Scanne d'abord une bobine Elegoo avant d'ajouter une étiquette.", Toast.LENGTH_SHORT).show()
             return
         }
-        PlancheEtiquettes.ajouter(this, info, dump)
+        PlancheEtiquettes.ajouter(this, info, dump, derniereOrigineBobine)
         actualiserBoutonPlanche()
         Toast.makeText(this, "Étiquette ajoutée à la planche.", Toast.LENGTH_SHORT).show()
     }
@@ -1370,14 +1397,15 @@ class MainActivity : AppCompatActivity() {
         // silencieusement, faisant disparaitre toute la liste d'actions (bug remonte par Tomyn :
         // plus que le titre, le message et "FERMER", aucune des 3 actions). L'info de pagination
         // passe donc dans le TITRE, qui lui cohabite sans probleme avec setItems.
-        val options = arrayOf("Imprimer", "Générer le PDF", "Vider la planche")
+        val options = arrayOf("Imprimer", "Partager le PDF", "Générer le PDF", "Vider la planche")
         AlertDialog.Builder(this)
             .setTitle("Planche (${etiquettes.size} étiquettes, $nbPages page(s) A4 de ${PlancheEtiquettes.etiquettesParPage(this)})")
             .setItems(options) { _, index ->
                 when (index) {
                     0 -> imprimerPlanche(etiquettes)
-                    1 -> exporterPlanchePdf()
-                    2 -> {
+                    1 -> partagerPlanchePdf(etiquettes)
+                    2 -> exporterPlanchePdf()
+                    3 -> {
                         PlancheEtiquettes.vider(this)
                         actualiserBoutonPlanche()
                         Toast.makeText(this, "Planche vidée.", Toast.LENGTH_SHORT).show()
@@ -1386,6 +1414,37 @@ class MainActivity : AppCompatActivity() {
             }
             .setNegativeButton("Fermer", null)
             .show()
+    }
+
+    /**
+     * Partage direct du PDF de la planche (v0.24, demande de Tomyn : "générer le PDF" + aller le
+     * rechercher dans le gestionnaire de fichiers pour l'envoyer etait juge fastidieux). Ecrit le
+     * PDF dans un sous-dossier dedie du cache, expose via FileProvider (un Uri file:// direct est
+     * refuse par Android 7+, voir AndroidManifest.xml et res/xml/file_paths.xml), puis ouvre le
+     * selecteur de partage standard (mail, Drive, service d'impression en ligne...) - meme
+     * principe que partagerResume() pour le texte.
+     */
+    private fun partagerPlanchePdf(etiquettes: List<PlancheEtiquettes.Etiquette>) {
+        try {
+            val dossier = File(cacheDir, "pdfs_partages")
+            if (!dossier.exists()) dossier.mkdirs()
+            val fichier = File(dossier, "etiquettes_elegoo_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(Date()) + ".pdf")
+            val document = PlancheEtiquettes.genererPdf(etiquettes, this)
+            try {
+                FileOutputStream(fichier).use { document.writeTo(it) }
+            } finally {
+                document.close()
+            }
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", fichier)
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "application/pdf"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(intent, "Partager la planche d'étiquettes"))
+        } catch (e: Exception) {
+            Toast.makeText(this, "Erreur de partage : ${e.message}", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun exporterPlanchePdf() {

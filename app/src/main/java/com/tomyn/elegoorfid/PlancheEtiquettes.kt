@@ -49,6 +49,16 @@ object PlancheEtiquettes {
 
     private fun lienQrPourDump(dumpHex: String): String = "$SCHEME_QR://$HOTE_QR/$dumpHex"
 
+    // Origine d'une bobine (ajoute en v0.24 a la demande de Tomyn, pour ne pas confondre plus
+    // tard une vraie bobine Elegoo scannee avec un tag qu'il a fabrique lui-meme) - voir
+    // MainActivity.afficherResultats/derniereOrigineBobine pour qui passe quoi. ORIGINE_SCAN_NFC
+    // est la valeur par defaut (et la seule a ne PAS afficher de badge sur l'etiquette, voir
+    // dessinerEtiquette - c'est le cas largement majoritaire, pas la peine de l'annoncer a chaque
+    // fois).
+    const val ORIGINE_SCAN_NFC = "Scan NFC"
+    const val ORIGINE_CREATION = "Création manuelle"
+    const val ORIGINE_QR = "Lecture QR (sans NFC)"
+
     // Mise en page de la grille (v0.23 : reglable, voir le commentaire en tete de fichier) -
     // valeurs par defaut 3x8 si rien n'a ete configure dans les Parametres.
     private fun colonnes(context: Context): Int = GestionnaireParametres.lireColonnesEtiquettes(context)
@@ -72,7 +82,11 @@ object PlancheEtiquettes {
         // Dump brut (pages 0x00-0x27) en hexa, pour le QR code de reclonage - voir dessinerQr.
         // Null si le dump source etait trop court (improbable, le bouton "Ajouter a la planche"
         // n'est propose qu'apres une lecture/creation reussie, qui couvre toujours cette plage).
-        val dumpHex: String?
+        val dumpHex: String?,
+        // Origine de la bobine (ORIGINE_SCAN_NFC/ORIGINE_CREATION/ORIGINE_QR) - null pour les
+        // etiquettes ecrites par une version anterieure a v0.24 (pas de badge affiche dans ce
+        // cas, voir dessinerEtiquette).
+        val origine: String?
     )
 
     private fun fichier(context: Context): File = File(context.getExternalFilesDir(null), NOM_FICHIER)
@@ -87,7 +101,8 @@ object PlancheEtiquettes {
         e.tempMinC?.toString() ?: "",
         e.tempMaxC?.toString() ?: "",
         e.dateAffichee ?: "",
-        e.dumpHex ?: ""
+        e.dumpHex ?: "",
+        e.origine ?: ""
     ).joinToString(SEPARATEUR)
 
     private fun depuisLigne(ligne: String): Etiquette? {
@@ -104,12 +119,18 @@ object PlancheEtiquettes {
             dateAffichee = champs[7].ifBlank { null },
             // getOrNull : les lignes ecrites par une version anterieure a l'ajout du QR (v0.17 et
             // avant) n'ont que 8 champs - pas de plantage, juste pas de QR sur ces etiquettes-la.
-            dumpHex = champs.getOrNull(8)?.ifBlank { null }
+            // Meme logique pour "origine" (v0.24, 10e champ).
+            dumpHex = champs.getOrNull(8)?.ifBlank { null },
+            origine = champs.getOrNull(9)?.ifBlank { null }
         )
     }
 
-    /** @param dump dump brut de la bobine (voir DecodeurElegoo/EncodeurElegoo) - sert a coder le QR de reclonage. */
-    fun ajouter(context: Context, info: DecodeurElegoo.InfoBobine, dump: ByteArray) {
+    /**
+     * @param dump dump brut de la bobine (voir DecodeurElegoo/EncodeurElegoo) - sert a coder le QR de reclonage.
+     * @param origine ORIGINE_SCAN_NFC/ORIGINE_CREATION/ORIGINE_QR (voir ces constantes) - ajoute
+     *   en v0.24 pour ne pas confondre plus tard une vraie bobine scannee avec un tag fabrique.
+     */
+    fun ajouter(context: Context, info: DecodeurElegoo.InfoBobine, dump: ByteArray, origine: String = ORIGINE_SCAN_NFC) {
         val etiquette = Etiquette(
             matiereTexte = info.matiereTexte,
             sousTypeTexte = info.sousTypeTexte,
@@ -121,7 +142,8 @@ object PlancheEtiquettes {
             dateAffichee = info.dateFabricationTexte,
             dumpHex = if (dump.size >= ClonageElegoo.TAILLE_MIN_DUMP_SOURCE) {
                 dump.copyOfRange(0, ClonageElegoo.TAILLE_MIN_DUMP_SOURCE).joinToString("") { "%02X".format(it) }
-            } else null
+            } else null,
+            origine = origine
         )
         try {
             fichier(context).appendText(versLigne(etiquette) + "\n")
@@ -255,6 +277,17 @@ object PlancheEtiquettes {
         canvas.drawText(titreTexte, xTexte, yTexte, titre)
 
         val lignesInfo = mutableListOf<String>()
+        // Badge d'origine (v0.24) : seulement si ce n'est PAS un vrai scan NFC (cas largement
+        // majoritaire, pas besoin de l'annoncer a chaque fois) - evite de confondre plus tard une
+        // vraie bobine Elegoo avec un tag cree a la main ou simplement reconsulte via QR.
+        if (e.origine != null && e.origine != ORIGINE_SCAN_NFC) {
+            val badge = when (e.origine) {
+                ORIGINE_CREATION -> "⚠ Créé manuellement"
+                ORIGINE_QR -> "⚠ Vu via QR (non re-scanné)"
+                else -> "⚠ ${e.origine}"
+            }
+            lignesInfo.add(badge)
+        }
         if (e.poidsGrammes != null) lignesInfo.add("${e.poidsGrammes}g")
         if (e.diametreMm != null) lignesInfo.add("${e.diametreMm}mm")
         if (e.tempMinC != null && e.tempMaxC != null) lignesInfo.add("${e.tempMinC}-${e.tempMaxC}°C")

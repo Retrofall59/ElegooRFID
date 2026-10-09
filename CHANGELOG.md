@@ -1,5 +1,78 @@
 # Changelog
 
+## v0.25-fix-settings-text (build 25)
+
+**Correctif d'un vrai bug remonté par Tomyn en testant la 0.23/0.24** (erreur de compilation
+Gradle, build bloqué avant même l'APK) :
+
+```
+e: SettingsActivity.kt:35:30 Type mismatch: inferred type is String but Editable! was expected
+e: SettingsActivity.kt:36:28 Type mismatch: inferred type is String but Editable! was expected
+```
+
+**Root cause, cash et franc** : dans le vrai SDK Android, `EditText` redéclare `getText()` pour
+retourner `Editable!` et non `CharSequence` - du coup la propriété Kotlin `text` qu'on récupère
+sur un `EditText` est elle aussi typée `Editable!`, et on ne peut pas lui assigner une `String`
+brute avec `champ.text = "..."`. Il faut passer par la méthode `setText(CharSequence)`, qui elle
+accepte bien n'importe quel `CharSequence` (dont une `String`).
+
+C'est moi qui ai introduit ce bug en v0.23, et c'est entièrement ma faute de raisonnement, pas un
+manque de vérification : j'avais **d'abord** écrit correctement `champColonnes.setText(...)`, j'ai
+buté sur une erreur de compilation ("accidental override") qui venait en réalité d'un défaut de
+mon stub de test (mon faux `EditText` déclarait un `setText` qui entrait en collision avec le
+getter/setter auto-généré par la propriété `text` de `TextView`), et au lieu de corriger le stub
+je me suis convaincu - à tort - que la "vraie" API ne proposait pas `setText` séparément et que la
+syntaxe `.text = ...` était la bonne. Mon outil de vérification (`kotlinc` contre des stubs écrits
+à la main) ne pouvait pas détecter l'erreur, puisque stub et code réel partageaient la même
+hypothèse fausse sur l'API d'`EditText` - exactement le même type de trou que le bug
+`ParcelFileDescriptor` de la 0.22.
+
+**Corrigé** : les deux lignes de `SettingsActivity.kt` utilisent maintenant
+`champColonnes.setText(...)` / `champLignes.setText(...)`. Le stub `EditText`/`TextView` a aussi
+été corrigé pour que `kotlinc` distingue bien, comme le vrai SDK, la propriété `text` (lecture/
+écriture simple, utilisée partout ailleurs dans l'appli pour `txtStatut.text = ...` etc., toujours
+valide) de la méthode `setText(CharSequence)` (déclarée séparément, sans collision de signature
+JVM cette fois). Un grep sur tout le code a confirmé qu'il n'y avait que ces deux lignes qui
+assignaient `.text = ` sur un `EditText` - toutes les autres occurrences de `.text = ` dans le
+projet sont sur des `TextView`/`Button` (type `CharSequence` dans le vrai SDK, donc correctes).
+
+Vérifié par compilation réelle du stub corrigé (zéro erreur), par les 22 fichiers XML passés dans
+un vrai parseur XML, et par les tests unitaires du décodeur (zéro régression - ce bug n'a aucun
+rapport avec le décodage). Aucun changement fonctionnel, juste le correctif.
+
+## v0.24-partage-export-origine (build 24)
+
+Trois améliorations proposées par Claude, validées par Damdam2959 :
+
+**1. Partager le PDF de la planche directement** (`MainActivity.partagerPlanchePdf`, nouvelle
+option dans le menu "Planche d'étiquettes") : écrit le PDF dans un sous-dossier dédié du cache,
+exposé via `FileProvider` (un `Uri file://` direct est refusé par Android 7+ -
+`FileUriExposedException`), puis ouvre le sélecteur de partage standard (mail, Drive, service
+d'impression en ligne...) - plus besoin de passer par "Générer le PDF" puis aller le rechercher
+dans le gestionnaire de fichiers. Déclaration `<provider>` + `res/xml/file_paths.xml` ajoutés dans
+le manifeste, limités au seul sous-dossier concerné.
+
+**2. Export du résultat d'un clonage par lot** (`MainActivity.exporterResultatLot`, bouton
+"Exporter le résultat" dans le récap de fin de lot) : CSV avec, pour chaque fichier du lot, le
+résultat (Réussi/Échec) et le détail de l'échec le cas échéant (page non confirmée, message
+d'erreur) - avant, cette information n'existait qu'à l'écran et disparaissait à la fermeture du
+récap.
+
+**3. Distinction visuelle de l'origine d'une bobine sur les étiquettes** (`PlancheEtiquettes.
+ORIGINE_SCAN_NFC`/`ORIGINE_CREATION`/`ORIGINE_QR`, `MainActivity.afficherResultats`) : un tag créé
+à la main (formulaire) ou simplement consulté via le QR d'une étiquette (sans re-scan NFC) porte
+maintenant un petit badge d'avertissement sur l'étiquette imprimée ("⚠ Créé manuellement" / "⚠ Vu
+via QR"), pour ne pas le confondre plus tard avec une vraie bobine Elegoo physiquement scannée.
+Rien n'apparaît pour un vrai scan NFC (cas largement majoritaire). Les étiquettes déjà
+enregistrées par une version antérieure à la v0.24 n'ont pas cette info (champ absent) et
+n'affichent donc aucun badge - pas de faux positif rétroactif.
+
+Vérifié par compilation réelle (zéro erreur, nouveaux stubs `FileProvider`/`Intent.EXTRA_STREAM`
+etc.), par les 21 (+1 nouveau : `file_paths.xml`) fichiers XML passés dans un vrai parseur XML, et
+par les tests unitaires du décodeur (zéro régression). **Non testé en conditions réelles** : que
+le sélecteur de partage Android propose bien les applis attendues pour un PDF, et le rendu visuel
+du badge d'origine sur une étiquette imprimée.
+
 ## v0.23-fix-planche-grille (build 23)
 
 **Correctif d'un vrai bug remonté par Tomyn en testant la 0.22** : le menu "Planche d'étiquettes"
