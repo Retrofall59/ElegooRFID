@@ -8,14 +8,19 @@ import android.os.Bundle
 import android.widget.ImageButton
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import android.util.Size
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import com.google.zxing.BarcodeFormat
 import com.google.zxing.BinaryBitmap
+import com.google.zxing.DecodeHintType
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.NotFoundException
 import com.google.zxing.PlanarYUVLuminanceSource
@@ -48,6 +53,15 @@ class ScanQrActivity : AppCompatActivity() {
     private lateinit var previewView: PreviewView
     private lateinit var executeurAnalyse: ExecutorService
     private val lecteurQr = MultiFormatReader()
+    // Restreint au QR (seul format utilise par les etiquettes) + TRY_HARDER (ajoute le
+    // 10/10/2026, en meme temps que la resolution d'analyse forcee ci-dessous) : sans hints,
+    // MultiFormatReader essaie tous les formats de codes-barres connus a chaque image, moins
+    // rigoureusement sur chacun - le restreindre au seul format attendu laisse ZXing consacrer
+    // tout son effort a bien le detecter.
+    private val hintsDecodage = mapOf(
+        DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
+        DecodeHintType.TRY_HARDER to true
+    )
     private var dejaTraite = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -82,7 +96,26 @@ class ScanQrActivity : AppCompatActivity() {
             try {
                 val fournisseur = fournisseurFutur.get()
                 val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
+                // Resolution d'analyse forcee plus haute (ajoute le 10/10/2026, suite au retour de
+                // Damdam2959 : le QR scanne bien avec un lecteur externe mais pas avec ce scanner
+                // integre) - cause probable : sans ResolutionSelector, ImageAnalysis choisit une
+                // resolution par defaut assez basse (souvent autour de 640x480 selon le telephone),
+                // DIFFERENTE de la resolution nette de l'aperçu (Preview) que l'utilisateur voit a
+                // l'ecran - c'est cette image basse resolution, pas l'aperçu, qui est analysee par
+                // ZXing. Un QR dense (65 modules de cote, voir PlancheEtiquettes.lienQrPourDump) tenu
+                // a quelques centimetres peut tres bien ne plus avoir assez de pixels pour que ses
+                // modules soient distinguables a cette resolution, alors qu'un lecteur externe
+                // dedie utilise typiquement une resolution d'analyse plus genereuse. ResolutionSelector
+                // est l'API CameraX officielle pour ca depuis camera-core 1.1 (non depreciee,
+                // contrairement a l'ancien setTargetResolution) - deja couverte par la dependance
+                // camera-core:1.3.4 de ce projet, aucune version a changer.
+                val selecteurResolution = ResolutionSelector.Builder()
+                    .setResolutionStrategy(
+                        ResolutionStrategy(Size(1280, 960), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER)
+                    )
+                    .build()
                 val analyse = ImageAnalysis.Builder()
+                    .setResolutionSelector(selecteurResolution)
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build()
                 analyse.setAnalyzer(executeurAnalyse) { image -> analyserImage(image) }
@@ -118,7 +151,7 @@ class ScanQrActivity : AppCompatActivity() {
             )
             val bitmap = BinaryBitmap(HybridBinarizer(source))
             val resultat = try {
-                lecteurQr.decode(bitmap)
+                lecteurQr.decode(bitmap, hintsDecodage)
             } catch (e: NotFoundException) {
                 null
             }

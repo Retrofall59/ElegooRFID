@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.36-fix-resolution-scanner (build 36)
+
+Bonne nouvelle du retour de Damdam2959 sur la v0.35 : **le QR scanne maintenant correctement avec
+un lecteur externe** - confirme que l'étiquette imprimée elle-même (dessin du QR, v0.35) est
+correcte. Restait un problème propre au scanner intégré de l'appli (`ScanQrActivity.kt`, v0.29),
+qui n'arrivait toujours pas à le lire alors qu'un lecteur externe y arrive sans souci sur la même
+étiquette - la cause ne peut donc plus être le QR imprimé, elle est forcément dans ce fichier.
+
+**Cause probable** : `ImageAnalysis` était construit sans préciser de résolution, ce qui laisse
+CameraX choisir une résolution d'analyse par défaut souvent assez basse (couramment proche de
+640×480 selon le téléphone) - **différente et bien plus petite** que la résolution nette de
+l'aperçu (`Preview`) affiché à l'écran. C'est cette image basse résolution, pas l'aperçu, que ZXing
+analyse. Un QR aussi dense que celui de nos étiquettes (65 modules de côté) tenu à quelques
+centimètres peut très bien ne plus avoir assez de pixels pour que ses modules restent distincts à
+cette résolution, alors qu'un lecteur externe dédié utilise typiquement une résolution d'analyse
+plus généreuse - ce qui correspond exactement au symptôme observé (ça marche à l'extérieur, pas
+dans l'appli, sur la même étiquette).
+
+**Corrigé** : résolution d'analyse forcée à 1280×960 via `ResolutionSelector`/`ResolutionStrategy`
+(API CameraX officielle depuis camera-core 1.1, déjà couverte par la dépendance
+`camera-core:1.3.4` existante - aucune version à changer, et non dépréciée contrairement à l'ancien
+`setTargetResolution`). Au passage, le décodeur ZXing est restreint au seul format QR
+(`DecodeHintType.POSSIBLE_FORMATS`) avec `TRY_HARDER` activé, au lieu d'essayer tous les formats de
+codes-barres connus à chaque image sans être aussi rigoureux sur aucun.
+
+Vérifié par compilation réelle (zéro erreur ; nouveaux stubs `ResolutionSelector`/
+`ResolutionStrategy`/`Size`/`DecodeHintType`), par les 23 fichiers XML passés dans un vrai parseur
+XML, et par les trois suites de tests unitaires existantes (zéro régression, aucune n'exerce la
+caméra elle-même). **Toujours pas vérifié en conditions réelles** (pas de téléphone/caméra
+disponibles ici) - cette hypothèse est cohérente avec "ça marche partout sauf dans le scanner
+intégré", mais c'est à Damdam2959 de confirmer sur son téléphone.
+
 ## v0.35-qr-rendu-bitmap (build 35)
 
 Suite au retour de Damdam2959 sur la v0.34 : après réimpression avec le QR agrandi et sa marge
