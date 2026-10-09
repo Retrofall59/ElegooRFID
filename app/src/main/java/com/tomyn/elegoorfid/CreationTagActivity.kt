@@ -20,11 +20,25 @@ import androidx.appcompat.app.AppCompatActivity
  * Tomyn) - voir EncodeurElegoo.kt pour la construction du dump. Utile en particulier pour son
  * futur filament recycle (Lyman), sans avoir a passer par l'editeur externe elegoo-rfid-editor.
  *
- * Renvoie le dump construit (160 octets) dans l'extra "dump" du resultat - MainActivity le traite
- * exactement comme un dump importe (voir onActivityResult, CODE_CREATION) : decodage + affichage
- * + boutons Cloner/Exporter/Ajouter a la planche actives, sans avoir touche de tag physique.
+ * Renvoie le dump construit (160 octets) dans l'extra "dump" du resultat si quantite == 1 -
+ * MainActivity le traite exactement comme un dump importe (voir onActivityResult, CODE_CREATION) :
+ * decodage + affichage + boutons Cloner/Exporter/Ajouter a la planche actives, sans avoir touche
+ * de tag physique.
+ *
+ * Quantite > 1 (ajoute le 09/10/2026, a la demande de Tomyn : tagger plusieurs bobines identiques
+ * d'un coup, ex. pour son filament recycle Lyman vendu avec de vrais tags Elegoo sur la bobine) :
+ * passe par le meme champ statique dumpsGeneres que ImportBaseDonneesActivity, et MainActivity
+ * enchaine directement sur demarrerLotAvecValides - le flux d'ecriture guidee bobine par bobine,
+ * deja utilise pour le clonage par lot, est reutilise sans aucune modification.
  */
 class CreationTagActivity : AppCompatActivity() {
+
+    companion object {
+        // Nombre maximum de tags identiques generables en un coup - purement une garde-fou contre
+        // une faute de frappe (ex. "5000" au lieu de "50"), pas une limite technique du format.
+        const val QUANTITE_MAX = 500
+        var dumpsGeneres: List<Pair<String, ByteArray>> = emptyList()
+    }
 
     private lateinit var spinnerMatiere: Spinner
     private lateinit var spinnerSousType: Spinner
@@ -34,6 +48,7 @@ class CreationTagActivity : AppCompatActivity() {
     private lateinit var champDiametre: EditText
     private lateinit var champTempMin: EditText
     private lateinit var champTempMax: EditText
+    private lateinit var champQuantite: EditText
 
     // Matieres triees par nom pour un menu deroulant lisible - code numerique associe a chaque
     // position, voir MaterialsElegoo.CODES_MATIERE.
@@ -54,6 +69,7 @@ class CreationTagActivity : AppCompatActivity() {
         champDiametre = findViewById(R.id.champDiametre)
         champTempMin = findViewById(R.id.champTempMin)
         champTempMax = findViewById(R.id.champTempMax)
+        champQuantite = findViewById(R.id.champQuantite)
 
         spinnerMatiere.adapter = ArrayAdapter(
             this, android.R.layout.simple_spinner_dropdown_item, matieres.map { it.second }
@@ -119,6 +135,13 @@ class CreationTagActivity : AppCompatActivity() {
             return
         }
 
+        val quantiteTexte = champQuantite.text.toString().trim()
+        val quantite = if (quantiteTexte.isEmpty()) 1 else quantiteTexte.toIntOrNull()
+        if (quantite == null || quantite < 1 || quantite > QUANTITE_MAX) {
+            Toast.makeText(this, "Quantité invalide (entre 1 et $QUANTITE_MAX).", Toast.LENGTH_LONG).show()
+            return
+        }
+
         val dump = EncodeurElegoo.construireDump(
             codeMatiere = codeMatiere,
             codeSousType = codeSousType,
@@ -129,9 +152,22 @@ class CreationTagActivity : AppCompatActivity() {
             tempMaxC = tempMax
         )
 
-        val resultat = Intent()
-        resultat.putExtra("dump", dump)
-        setResult(Activity.RESULT_OK, resultat)
+        if (quantite == 1) {
+            val resultat = Intent()
+            resultat.putExtra("dump", dump)
+            setResult(Activity.RESULT_OK, resultat)
+            finish()
+            return
+        }
+
+        // Plusieurs tags identiques : meme dump copie N fois, chacun avec son propre tableau de
+        // bytes (EncodeurElegoo.construireDump en cree un nouveau a chaque appel, mais on duplique
+        // explicitement pour ne jamais partager le meme ByteArray entre plusieurs entrees du lot).
+        val nomMateriau = sousTypes.getOrNull(spinnerSousType.selectedItemPosition)?.second ?: nomMatiere
+        dumpsGeneres = (1..quantite).map { index ->
+            "$nomMateriau #$index/$quantite" to dump.copyOf()
+        }
+        setResult(Activity.RESULT_OK, Intent())
         finish()
     }
 }

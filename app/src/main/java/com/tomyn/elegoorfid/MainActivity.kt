@@ -887,7 +887,7 @@ class MainActivity : AppCompatActivity() {
 
         info.matiereTexte?.let { ajouterLigneInfo(R.drawable.ic_bobine, "Matière : $it") }
         info.sousTypeTexte?.let { ajouterLigneInfo(R.drawable.ic_bobine, "Sous-type : $it") }
-        info.couleurHex?.let { ajouterLigneInfo(R.drawable.ic_couleur, "Couleur : #$it") }
+        info.couleurHex?.let { ajouterLigneInfo(R.drawable.ic_couleur, "Couleur : #$it${NomsCouleurs.nomApproche(it)?.let { nom -> " ($nom)" } ?: ""}") }
         info.poidsGrammes?.let { ajouterLigneInfo(R.drawable.ic_materiau, "Poids bobine : ${it}g") }
         info.diametreMm?.let { ajouterLigneInfo(R.drawable.ic_temperature, "Diamètre : ${it}mm") }
         if (info.tempMinC != null && info.tempMaxC != null) {
@@ -898,7 +898,7 @@ class MainActivity : AppCompatActivity() {
         val resume = StringBuilder()
         info.matiereTexte?.let { resume.appendLine("Matière : $it") }
         info.sousTypeTexte?.let { resume.appendLine("Sous-type : $it") }
-        info.couleurHex?.let { resume.appendLine("Couleur : #$it") }
+        info.couleurHex?.let { resume.appendLine("Couleur : #$it${NomsCouleurs.nomApproche(it)?.let { nom -> " ($nom)" } ?: ""}") }
         info.poidsGrammes?.let { resume.appendLine("Poids : ${it}g") }
         if (info.tempMinC != null && info.tempMaxC != null) {
             resume.appendLine("Température buse : ${info.tempMinC}-${info.tempMaxC}°C")
@@ -1223,6 +1223,15 @@ class MainActivity : AppCompatActivity() {
             }
             CODE_CREATION -> {
                 if (resultCode != RESULT_OK) return
+                // Quantite > 1 (voir CreationTagActivity.dumpsGeneres) : meme champ statique et
+                // meme enchainement sur demarrerLotAvecValides que CODE_IMPORT_BASE, verifie en
+                // premier puisque dans ce cas l'extra "dump" ci-dessous est absent.
+                val lot = CreationTagActivity.dumpsGeneres
+                if (lot.isNotEmpty()) {
+                    CreationTagActivity.dumpsGeneres = emptyList()
+                    demarrerLotAvecValides(lot)
+                    return
+                }
                 @Suppress("DEPRECATION")
                 val dump = data?.getByteArrayExtra("dump")
                 if (dump == null) {
@@ -1391,7 +1400,7 @@ class MainActivity : AppCompatActivity() {
     private fun texteAfficheLigne(l: LigneHistorique): String {
         val titre = listOfNotNull(l.matiereTexte, l.sousTypeTexte).joinToString(" ").ifBlank { "Matière inconnue" }
         val details = listOfNotNull(
-            "#${l.couleurHex}".takeIf { l.couleurHex.isNotBlank() },
+            "#${l.couleurHex}${NomsCouleurs.nomApproche(l.couleurHex)?.let { nom -> " ($nom)" } ?: ""}".takeIf { l.couleurHex.isNotBlank() },
             l.poidsGrammes?.let { "${it}g" }
         ).joinToString(" · ")
         return "${l.date}\n$titre" + (if (details.isNotBlank()) " ($details)" else "")

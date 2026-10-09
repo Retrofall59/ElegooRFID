@@ -1,5 +1,40 @@
 # Changelog
 
+## v0.33-nom-couleur (build 33)
+
+Nom de couleur approché affiché à côté du code hex ("Couleur : #106DD7 (Bleu roi)") partout où la
+couleur d'une bobine est affichée (lecture NFC, tag créé à la main, consultation via QR, texte
+exporté/partagé, détail de l'historique) - demandé par Damdam2959 : le code hex seul ne veut rien
+dire pour un utilisateur lambda, qui a besoin d'un nom lisible.
+
+Pas de table officielle à lire (un tag Elegoo ne stocke qu'une couleur RGB888 brute, aucun nom -
+voir `DecodeurElegoo.kt`), donc nouveau fichier `NomsCouleurs.kt` : une petite palette de référence
+(~45 noms de couleurs usuels pour du filament) et le nom le plus proche par distance euclidienne
+simple sur les trois composantes RGB. Le hex exact reste toujours affiché en premier, le nom entre
+parenthèses n'est qu'une approximation pour se repérer d'un coup d'œil. Testé sur les couleurs de
+base et sur deux couleurs de vraies bobines Elegoo (`tests/TestNomsCouleurs.kt`) - une première
+version pondérée par luminosité perçue (habituelle pour comparer des gris) faisait tomber un bleu
+assez saturé sur "Sarcelle" à cause du poids quasi nul donné au bleu dans cette pondération ;
+revenu à une distance simple, complétée par quelques teintes de bleu supplémentaires ("Bleu azur",
+"Bleu roi") pour mieux couvrir les bleus clairs/saturés qu'on trouve réellement sur les bobines.
+
+## v0.32-quantite-creation-tag (build 32)
+
+Nouveau champ "Quantité (tags identiques)" sur l'écran "Créer un tag personnalisé"
+(`CreationTagActivity.kt`) - proposée par Claude en discutant du futur filament recyclé (Lyman) que
+Damdam2959 pourrait vendre avec de vrais tags Elegoo sur la bobine, puis explicitement demandée par
+Damdam2959 ("tu peux le coder maintenant"). Permet de générer d'un coup N copies identiques du tag
+en cours de création (même matière, couleur, poids, diamètre, températures) - utile pour tagger un
+lot de bobines identiques sans repasser tout le formulaire à chaque fois.
+
+Quantité laissée à 1 (comportement inchangé) ou vide : aucun changement, un seul tag est renvoyé et
+affiché directement comme avant. Quantité > 1 : réutilise exactement le même circuit que l'import de
+base de données (v0.30) - un champ statique `CreationTagActivity.dumpsGeneres` (liste de
+(nom, dump)) lu par `MainActivity.onActivityResult` et transmis directement à
+`demarrerLotAvecValides`, le même flux d'écriture guidée bobine par bobine déjà utilisé pour le
+clonage par lot. Quantité plafonnée à 500 (garde-fou contre une faute de frappe, pas une limite
+technique du format).
+
 ## v0.31-fix-libelles-gammes (build 31)
 
 Correction d'un bug remonté par Damdam2959 en testant la v0.30 (capture d'écran à l'appui) : dans
