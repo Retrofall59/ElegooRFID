@@ -31,14 +31,21 @@ son code source la table de correspondance et annote chaque page dans son édite
 - **Température d'extrusion (buse)** : min et max, en degrés C. Aucun champ "température plateau"
   dans ce format.
 - **Poids, diamètre** : champs numériques simples
-- **Date de fabrication** : année + mois, encodés en BCD (pas de jour)
+- **Date de fabrication** : deux octets en BCD (page 0x18), décodés comme mois (1-12) + année
+  quand c'est un mois valide. Sur les 6 vrais échantillons disponibles à ce jour, c'est toujours
+  la même valeur impossible comme mois (`00 36`) - plus probablement une constante réservée du
+  format qu'une vraie date variable, donc rien n'est affiché pour cette valeur (voir
+  `DecodeurElegoo.kt`)
 
 ## Fonctionnalités
 
 Lecture, copier/partager, export **et import** du dump brut, historique des scans, rapport de
-compatibilité, gestion du NFC désactivé, réglage de la vibration. L'impression d'étiquettes n'a
-pas encore été ajoutée (tous les champs connus sont désormais confirmés, donc ce n'est plus une
-question de données manquantes — juste pas encore demandée/construite).
+compatibilité, gestion du NFC désactivé, réglage de la vibration, **impression d'étiquettes**
+(v0.15, grille générique 3×8 par page A4 - voir `PlancheEtiquettes.kt`), **création de tag
+personnalisé** (v0.17, formulaire complet sans passer par un éditeur externe - voir
+`EncodeurElegoo.kt`), **clonage par lot** (v0.17, plusieurs dumps → plusieurs tags à la suite) et
+**avertissement préventif** si un verrou est détecté avant un effacement (v0.17, imparfait - voir
+le CHANGELOG).
 
 **Importer un dump pour cloner (v0.7, élargi en v0.9)** : jusqu'à présent le clonage exigeait
 d'avoir la bobine source physiquement en main au moment de l'écriture. Le bouton "Importer un

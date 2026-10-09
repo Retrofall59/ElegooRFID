@@ -42,6 +42,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnCloner: Button
     private lateinit var btnAnnulerClonage: Button
     private lateinit var btnEffacer: Button
+    private lateinit var btnAjouterPlanche: Button
+    private lateinit var btnGenererPdfPlanche: Button
+    private lateinit var btnClonerLot: Button
     private lateinit var nfcAdapter: NfcAdapter
 
     private val dernieresLignesInfo = mutableListOf<Pair<Int, String>>()
@@ -49,6 +52,12 @@ class MainActivity : AppCompatActivity() {
     private var dernierResume: String = ""
     private var dernierScanReussi = false
     private var contenuAExporter: String? = null
+    private var dernierInfoBobine: DecodeurElegoo.InfoBobine? = null
+
+    // --- Planche d'etiquettes : voir PlancheEtiquettes.kt. Le PDF genere est ecrit directement
+    // sur l'Uri choisi par l'utilisateur au moment ou l'export se concretise (onActivityResult,
+    // CODE_EXPORT_PLANCHE) - contrairement a contenuAExporter (texte), on le regenere a la volee
+    // a ce moment-la plutot que de le garder en memoire entre-temps. ---
 
     // --- Clonage : voir ClonageElegoo.kt pour le detail et le choix de securite (pourquoi on ne
     // touche qu'aux pages 0x03-0x27, jamais 0x28+ qui sont de la configuration de puce). ---
@@ -60,6 +69,21 @@ class MainActivity : AppCompatActivity() {
     // que le clonage, jamais 0x28+. Contrairement au clonage, ne depend d'aucune lecture
     // prealable : disponible des le lancement de l'appli. ---
     private var enAttenteTagEffacement = false
+
+    // --- Avertissement preventif avant effacement (ajoute le 09/10/2026) : lit les verrous AVANT
+    // de tenter l'ecriture, pour prevenir plutot que de laisser echouer silencieusement - voir
+    // effacerTagCible. Un verrou a 00 00 ne garantit pas que l'effacement reussira (voir le mystere
+    // non resolu sur la page 0x03, ClonageElegoo.kt), donc cet avertissement reste imparfait : il
+    // previent seulement quand un verrou NON nul est effectivement detecte. ---
+    private var effacementConfirmeMalgreVerrou = false
+
+    // --- Clonage par lot (ajoute le 09/10/2026 a la demande de Tomyn) : importe plusieurs dumps
+    // d'un coup, puis les ecrit les uns apres les autres sur autant de tags vierges, sans ressaisir
+    // ni rescanner a chaque fois. Reutilise executerClonage (meme coeur que le clonage simple). ---
+    private var enAttenteTagLot = false
+    private var lotAClone: List<Pair<String, ByteArray>> = emptyList()
+    private var indexLotCourant = 0
+    private val resultatsLot = mutableListOf<Pair<String, Boolean>>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -75,11 +99,20 @@ class MainActivity : AppCompatActivity() {
         btnCloner = findViewById(R.id.btnCloner)
         btnAnnulerClonage = findViewById(R.id.btnAnnulerClonage)
         btnEffacer = findViewById(R.id.btnEffacer)
+        btnAjouterPlanche = findViewById(R.id.btnAjouterPlanche)
+        btnGenererPdfPlanche = findViewById(R.id.btnGenererPdfPlanche)
+        btnClonerLot = findViewById(R.id.btnClonerLot)
 
         btnReglagesNfc.setOnClickListener { ouvrirReglagesNfc() }
         btnCloner.setOnClickListener { demarrerModeClonage() }
-        btnAnnulerClonage.setOnClickListener { annulerModeAttente() }
+        btnAnnulerClonage.setOnClickListener { if (enAttenteTagLot) annulerLot() else annulerModeAttente() }
         btnEffacer.setOnClickListener { demarrerModeEffacement() }
+        findViewById<Button>(R.id.btnClonerLot).setOnClickListener { demarrerImportLot() }
+        btnAjouterPlanche.setOnClickListener { ajouterEtiquetteAPlanche() }
+        btnGenererPdfPlanche.setOnClickListener { genererPdfPlanche() }
+        findViewById<Button>(R.id.btnCreerTag).setOnClickListener {
+            startActivityForResult(Intent(this, CreationTagActivity::class.java), CODE_CREATION)
+        }
         findViewById<Button>(R.id.btnExporter).setOnClickListener { exporterDump() }
         findViewById<Button>(R.id.btnImporterDump).setOnClickListener { importerDump() }
         findViewById<Button>(R.id.btnCopier).setOnClickListener { copierResume() }
@@ -92,6 +125,7 @@ class MainActivity : AppCompatActivity() {
 
         NfcAdapter.getDefaultAdapter(this)?.let { nfcAdapter = it }
 
+        actualiserBoutonPlanche()
         restaurerAffichageResultat(savedInstanceState)
         traiterIntentEventuel(intent)
     }
@@ -146,12 +180,17 @@ class MainActivity : AppCompatActivity() {
             effacerTagCible(tag)
             return
         }
+        if (enAttenteTagLot) {
+            traiterTagLot(tag)
+            return
+        }
 
         layoutLignesInfo.removeAllViews()
         dernieresLignesInfo.clear()
         vuCouleur.visibility = View.GONE
         imgNfc.visibility = View.VISIBLE
         btnCloner.visibility = View.GONE
+        btnAjouterPlanche.visibility = View.GONE
         txtStatut.text = "Lecture en cours..."
 
         val nfcA = NfcA.get(tag)
@@ -249,6 +288,8 @@ class MainActivity : AppCompatActivity() {
         enAttenteTagCible = true
         btnCloner.visibility = View.GONE
         btnEffacer.visibility = View.GONE
+        btnAjouterPlanche.visibility = View.GONE
+        btnClonerLot.visibility = View.GONE
         btnAnnulerClonage.visibility = View.VISIBLE
         btnAnnulerClonage.text = "Annuler le clonage"
         layoutLignesInfo.removeAllViews()
@@ -271,8 +312,11 @@ class MainActivity : AppCompatActivity() {
             .setMessage("Le prochain tag approché sera entièrement effacé (données produit remises à zéro), que ce soit une bobine Elegoo, un clone, ou un tag de test. Irréversible. Continuer ?")
             .setPositiveButton("Approcher un tag") { _, _ ->
                 enAttenteTagEffacement = true
+                effacementConfirmeMalgreVerrou = false
                 btnCloner.visibility = View.GONE
                 btnEffacer.visibility = View.GONE
+                btnAjouterPlanche.visibility = View.GONE
+                btnClonerLot.visibility = View.GONE
                 btnAnnulerClonage.visibility = View.VISIBLE
                 btnAnnulerClonage.text = "Annuler l'effacement"
                 layoutLignesInfo.removeAllViews()
@@ -286,6 +330,62 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun effacerTagCible(tag: Tag) {
+        if (effacementConfirmeMalgreVerrou) {
+            effacementConfirmeMalgreVerrou = false
+            effectuerEffacement(tag)
+            return
+        }
+
+        val nfcA = NfcA.get(tag)
+        if (nfcA == null) {
+            Toast.makeText(this, "Ce tag n'est pas compatible NFC-A, essaie un autre tag.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Lecture des verrous AVANT toute ecriture - voir le commentaire pres de la declaration de
+        // effacementConfirmeMalgreVerrou. Connexion separee de celle de l'effacement lui-meme (dans
+        // effectuerEffacement), meme principe que traiterTagCibleClonage/ecrireEtVerifierClone :
+        // lire d'abord, decider, et si besoin redemander un scan apres une popup.
+        try {
+            nfcA.connect()
+            val dumpAvant = lireDumpBrut(nfcA, ClonageElegoo.DERNIERE_PAGE_DIAGNOSTIC)
+            nfcA.close()
+            val verrousDyn = ClonageElegoo.verrousDynamiquesHex(dumpAvant)
+            val verrousStat = ClonageElegoo.verrousStatiquesHex(dumpAvant)
+            val verrouDetecte = (verrousDyn != null && verrousDyn != "00 00") || (verrousStat != null && verrousStat != "00 00")
+            if (verrouDetecte) {
+                runOnUiThread {
+                    txtStatut.text = "Verrou détecté - confirmation demandée..."
+                    AlertDialog.Builder(this)
+                        .setTitle("Ce tag semble verrouillé")
+                        .setMessage(
+                            "Verrou dynamique (0x28) : ${verrousDyn ?: "?"} — verrou statique (0x02) : ${verrousStat ?: "?"}.\n\n" +
+                                "L'effacement risque d'échouer sur une ou plusieurs pages à cause de ce verrou. Continuer quand même ?"
+                        )
+                        .setPositiveButton("Effacer quand même") { _, _ ->
+                            // Meme raison que pour le clonage : le tag a pu quitter le champ NFC
+                            // pendant l'affichage de la popup, on redemande un scan plutot que de
+                            // reutiliser l'objet Tag.
+                            effacementConfirmeMalgreVerrou = true
+                            txtStatut.text = "Confirmé : rapproche à nouveau le tag pour l'effacer..."
+                        }
+                        .setNegativeButton("Annuler") { _, _ -> annulerModeAttente() }
+                        .setOnCancelListener { annulerModeAttente() }
+                        .show()
+                }
+                return
+            }
+        } catch (e: Exception) {
+            try { nfcA.close() } catch (e2: Exception) { /* rien a faire */ }
+            runOnUiThread { txtStatut.text = "Erreur de lecture avant effacement : ${e.message}" }
+            return
+        }
+
+        effectuerEffacement(tag)
+    }
+
+    /** Efface puis verifie - voir effacerTagCible pour la verification preventive des verrous en amont. */
+    private fun effectuerEffacement(tag: Tag) {
         val nfcA = NfcA.get(tag)
         if (nfcA == null) {
             Toast.makeText(this, "Ce tag n'est pas compatible NFC-A, essaie un autre tag.", Toast.LENGTH_SHORT).show()
@@ -313,7 +413,8 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 btnAnnulerClonage.visibility = View.GONE
                 btnEffacer.visibility = View.VISIBLE
-                if (dernierScanReussi) btnCloner.visibility = View.VISIBLE
+                btnClonerLot.visibility = View.VISIBLE
+                if (dernierScanReussi) { btnCloner.visibility = View.VISIBLE; btnAjouterPlanche.visibility = View.VISIBLE }
                 txtStatut.text = when {
                     reussi -> "Tag effacé et vérifié ✓ — prêt pour un nouveau clonage"
                     pageEnEchec != null -> "Écriture interrompue (page 0x%02X non confirmée) — repose le tag bien à plat sans le bouger et réessaie.".format(pageEnEchec)
@@ -335,7 +436,8 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 btnAnnulerClonage.visibility = View.GONE
                 btnEffacer.visibility = View.VISIBLE
-                if (dernierScanReussi) btnCloner.visibility = View.VISIBLE
+                btnClonerLot.visibility = View.VISIBLE
+                if (dernierScanReussi) { btnCloner.visibility = View.VISIBLE; btnAjouterPlanche.visibility = View.VISIBLE }
                 txtStatut.text = "Erreur d'effacement : ${e.message} — le tag est peut-être verrouillé ou n'est pas un NTAG213/215."
             }
         }
@@ -346,9 +448,11 @@ class MainActivity : AppCompatActivity() {
         enAttenteTagCible = false
         enAttenteTagEffacement = false
         ecrasementConfirme = false
+        effacementConfirmeMalgreVerrou = false
         btnAnnulerClonage.visibility = View.GONE
         btnEffacer.visibility = View.VISIBLE
-        if (dernierScanReussi) btnCloner.visibility = View.VISIBLE
+        btnClonerLot.visibility = View.VISIBLE
+        if (dernierScanReussi) { btnCloner.visibility = View.VISIBLE; btnAjouterPlanche.visibility = View.VISIBLE }
         txtStatut.text = if (effacementEnCours) {
             "Effacement annulé. Approche une bobine Elegoo du dos du téléphone..."
         } else {
@@ -419,17 +523,25 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Ecrit les pages 0x03-0x27 depuis dumpSource sur tag, puis relit pour verifier. Gere elle-meme connect/close. */
-    private fun ecrireEtVerifierClone(tag: Tag, dumpSource: ByteArray) {
+    /**
+     * Resultat brut d'une tentative de clonage sur un tag, sans aucun effet de bord UI - voir
+     * executerClonage. reussi=false avec pageEnEchec=null et erreurMessage=null veut dire
+     * "ecriture terminee mais la relecture ne correspond pas" (cas distinct d'une page qui refuse
+     * carrement l'ecriture).
+     */
+    private data class ResultatClonage(val reussi: Boolean, val pageEnEchec: Int?, val erreurMessage: String?)
+
+    /**
+     * Coeur du clonage (ecrit les pages 0x03-0x27 depuis dumpSource sur tag, puis relit pour
+     * verifier) - AUCUN effet de bord sur l'UI, pour pouvoir servir aussi bien au clonage simple
+     * (ecrireEtVerifierClone) qu'au clonage par lot (traiterTagLot), qui ont des besoins d'affichage
+     * differents apres coup (le lot doit enchainer sur le fichier suivant plutot que de revenir a
+     * l'etat de repos). Gere elle-meme connect/close du tag.
+     */
+    private fun executerClonage(tag: Tag, dumpSource: ByteArray): ResultatClonage {
         val nfcA = NfcA.get(tag)
-        if (nfcA == null) {
-            runOnUiThread { Toast.makeText(this, "Ce tag n'est pas compatible NFC-A, essaie un autre tag.", Toast.LENGTH_SHORT).show() }
-            return
-        }
-
-        runOnUiThread { txtStatut.text = "Écriture en cours, ne retire pas le tag..." }
-
-        try {
+            ?: return ResultatClonage(false, null, "Ce tag n'est pas compatible NFC-A, essaie un autre tag.")
+        return try {
             nfcA.connect()
             var pageEnEchec: Int? = null
             for ((page, octets) in ClonageElegoo.pagesAEcrire(dumpSource)) {
@@ -442,32 +554,149 @@ class MainActivity : AppCompatActivity() {
             }
             val dumpRelu = lireDumpBrut(nfcA, ClonageElegoo.DERNIERE_PAGE_DONNEES)
             nfcA.close()
-
-            enAttenteTagCible = false
             val reussi = pageEnEchec == null && ClonageElegoo.zoneCloneeIdentique(dumpSource, dumpRelu)
-            runOnUiThread {
-                btnAnnulerClonage.visibility = View.GONE
-                btnEffacer.visibility = View.VISIBLE
-                if (dernierScanReussi) btnCloner.visibility = View.VISIBLE
-                if (reussi) {
-                    txtStatut.text = "Clonage réussi et vérifié ✓"
-                    if (GestionnaireParametres.lireVibrationFinLecture(this)) vibrerConfirmation()
-                } else if (pageEnEchec != null) {
-                    txtStatut.text = "Écriture interrompue (page 0x%02X non confirmée) — repose le tag bien à plat sans le bouger et réessaie.".format(pageEnEchec)
-                } else {
-                    txtStatut.text = "Écriture terminée mais la relecture ne correspond pas - clonage probablement incomplet. Réessaie."
-                }
-            }
+            ResultatClonage(reussi, pageEnEchec, null)
         } catch (e: Exception) {
             try { nfcA.close() } catch (e2: Exception) { /* rien a faire */ }
-            enAttenteTagCible = false
-            runOnUiThread {
-                btnAnnulerClonage.visibility = View.GONE
-                btnEffacer.visibility = View.VISIBLE
-                if (dernierScanReussi) btnCloner.visibility = View.VISIBLE
-                txtStatut.text = "Erreur d'écriture : ${e.message} — le tag cible est peut-être verrouillé ou n'est pas un NTAG213/215 vierge."
+            ResultatClonage(false, null, e.message)
+        }
+    }
+
+    /** Clonage simple (bouton "Cloner sur une bobine vierge") : ecrit puis remet l'UI au repos. */
+    private fun ecrireEtVerifierClone(tag: Tag, dumpSource: ByteArray) {
+        runOnUiThread { txtStatut.text = "Écriture en cours, ne retire pas le tag..." }
+        val resultat = executerClonage(tag, dumpSource)
+        enAttenteTagCible = false
+        runOnUiThread {
+            btnAnnulerClonage.visibility = View.GONE
+            btnEffacer.visibility = View.VISIBLE
+            btnClonerLot.visibility = View.VISIBLE
+            if (dernierScanReussi) { btnCloner.visibility = View.VISIBLE; btnAjouterPlanche.visibility = View.VISIBLE }
+            when {
+                resultat.reussi -> {
+                    txtStatut.text = "Clonage réussi et vérifié ✓"
+                    if (GestionnaireParametres.lireVibrationFinLecture(this)) vibrerConfirmation()
+                }
+                resultat.pageEnEchec != null ->
+                    txtStatut.text = "Écriture interrompue (page 0x%02X non confirmée) — repose le tag bien à plat sans le bouger et réessaie.".format(resultat.pageEnEchec)
+                resultat.erreurMessage != null ->
+                    txtStatut.text = "Erreur d'écriture : ${resultat.erreurMessage} — le tag cible est peut-être verrouillé ou n'est pas un NTAG213/215 vierge."
+                else ->
+                    txtStatut.text = "Écriture terminée mais la relecture ne correspond pas - clonage probablement incomplet. Réessaie."
             }
         }
+    }
+
+    // ============================== CLONAGE PAR LOT ==============================
+    // Importe plusieurs dumps d'un coup (meme logique de parsing que l'import simple, voir
+    // extraireDumpDepuisImport), puis les ecrit les uns apres les autres - un tag par fichier -
+    // en enchainant automatiquement sur le fichier suivant apres chaque succes.
+
+    private fun demarrerImportLot() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        }
+        try {
+            startActivityForResult(intent, CODE_IMPORT_LOT)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Impossible d'ouvrir le sélecteur de fichiers : ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /** Nom de fichier lisible a partir d'un Uri (sans dependre de la query du ContentResolver, pas stubee partout) - repli sur le dernier segment de chemin. */
+    private fun nomDepuisUri(uri: android.net.Uri): String =
+        uri.toString().substringAfterLast('/').substringBefore('?').ifBlank { "fichier" }
+
+    private fun demarrerLotTagSuivant() {
+        enAttenteTagLot = true
+        btnCloner.visibility = View.GONE
+        btnEffacer.visibility = View.GONE
+        btnAjouterPlanche.visibility = View.GONE
+        btnClonerLot.visibility = View.GONE
+        btnAnnulerClonage.visibility = View.VISIBLE
+        btnAnnulerClonage.text = "Annuler le lot"
+        layoutLignesInfo.removeAllViews()
+        dernieresLignesInfo.clear()
+        vuCouleur.visibility = View.GONE
+        imgNfc.visibility = View.VISIBLE
+        val (nom, _) = lotAClone[indexLotCourant]
+        txtStatut.text = "Approche le tag vierge pour \"$nom\" (${indexLotCourant + 1}/${lotAClone.size})..."
+    }
+
+    private fun traiterTagLot(tag: Tag) {
+        val (nom, dump) = lotAClone[indexLotCourant]
+        runOnUiThread { txtStatut.text = "Écriture en cours (${indexLotCourant + 1}/${lotAClone.size}) : $nom..." }
+        val resultat = executerClonage(tag, dump)
+        runOnUiThread {
+            if (resultat.reussi) {
+                resultatsLot.add(nom to true)
+                indexLotCourant++
+                if (GestionnaireParametres.lireVibrationFinLecture(this)) vibrerConfirmation()
+                avancerOuTerminerLot()
+            } else {
+                val raison = when {
+                    resultat.pageEnEchec != null -> "page 0x%02X non confirmée".format(resultat.pageEnEchec)
+                    resultat.erreurMessage != null -> resultat.erreurMessage
+                    else -> "relecture non conforme"
+                }
+                AlertDialog.Builder(this)
+                    .setTitle("Échec sur \"$nom\"")
+                    .setMessage("$raison\n\nRéessayer ce fichier (sur le même tag ou un autre), passer au suivant, ou annuler le lot ?")
+                    .setPositiveButton("Réessayer") { _, _ ->
+                        txtStatut.text = "Approche un tag pour réessayer \"$nom\" (${indexLotCourant + 1}/${lotAClone.size})..."
+                    }
+                    .setNeutralButton("Passer au suivant") { _, _ ->
+                        resultatsLot.add(nom to false)
+                        indexLotCourant++
+                        avancerOuTerminerLot()
+                    }
+                    .setNegativeButton("Annuler le lot") { _, _ -> annulerLot() }
+                    .setCancelable(false)
+                    .show()
+            }
+        }
+    }
+
+    private fun avancerOuTerminerLot() {
+        if (indexLotCourant >= lotAClone.size) {
+            terminerLot()
+        } else {
+            val (nom, _) = lotAClone[indexLotCourant]
+            txtStatut.text = "Approche le tag vierge pour \"$nom\" (${indexLotCourant + 1}/${lotAClone.size})..."
+        }
+    }
+
+    private fun terminerLot() {
+        val reussis = resultatsLot.count { it.second }
+        val total = resultatsLot.size
+        val echecs = resultatsLot.filter { !it.second }.map { it.first }
+        val detail = if (echecs.isNotEmpty()) "\n\nNon clonés : ${echecs.joinToString(", ")}" else ""
+        AlertDialog.Builder(this)
+            .setTitle("Lot terminé")
+            .setMessage("$reussis/$total tag(s) clonés avec succès.$detail")
+            .setPositiveButton("OK", null)
+            .show()
+        reinitialiserEtatLot()
+        txtStatut.text = "Lot terminé. Approche une bobine Elegoo du dos du téléphone..."
+    }
+
+    private fun annulerLot() {
+        reinitialiserEtatLot()
+        txtStatut.text = "Lot annulé. Approche une bobine Elegoo du dos du téléphone..."
+    }
+
+    private fun reinitialiserEtatLot() {
+        enAttenteTagLot = false
+        lotAClone = emptyList()
+        resultatsLot.clear()
+        indexLotCourant = 0
+        btnAnnulerClonage.visibility = View.GONE
+        btnAnnulerClonage.text = "Annuler le clonage"
+        btnEffacer.visibility = View.VISIBLE
+        btnClonerLot.visibility = View.VISIBLE
+        if (dernierScanReussi) { btnCloner.visibility = View.VISIBLE; btnAjouterPlanche.visibility = View.VISIBLE }
     }
 
     private fun formaterDumpHex(dump: ByteArray): String {
@@ -509,11 +738,25 @@ class MainActivity : AppCompatActivity() {
         ligne.startAnimation(animation)
     }
 
-    private fun afficherResultats(info: DecodeurElegoo.InfoBobine, dump: ByteArray) {
+    /**
+     * @param statutTexte permet de distinguer une vraie lecture ("Bobine identifiée") d'un tag
+     *   cree a la main (CreationTagActivity, voir onActivityResult/CODE_CREATION) - le reste de
+     *   l'affichage (champs, boutons Cloner/Exporter/Planche) est identique dans les deux cas.
+     * @param enregistrerHistorique false pour un tag cree a la main : l'historique ne doit
+     *   refleter que des bobines physiquement scannees, pas des creations.
+     */
+    private fun afficherResultats(
+        info: DecodeurElegoo.InfoBobine,
+        dump: ByteArray,
+        statutTexte: String = "Bobine identifiée",
+        enregistrerHistorique: Boolean = true
+    ) {
         dernierScanReussi = true
         dernierDumpBrut = dump
+        dernierInfoBobine = info
         btnCloner.visibility = if (dump.size >= ClonageElegoo.TAILLE_MIN_DUMP_SOURCE) View.VISIBLE else View.GONE
-        txtStatut.text = "Bobine identifiée"
+        btnAjouterPlanche.visibility = View.VISIBLE
+        txtStatut.text = statutTexte
 
         if (info.couleurHex != null) {
             try {
@@ -533,7 +776,6 @@ class MainActivity : AppCompatActivity() {
             ajouterLigneInfo(R.drawable.ic_temperature, "Température buse : ${info.tempMinC}-${info.tempMaxC}°C")
         }
         info.dateFabricationTexte?.let { ajouterLigneInfo(R.drawable.ic_bobine, "Date de fabrication : $it") }
-        info.semaineFabricationTexte?.let { ajouterLigneInfo(R.drawable.ic_bobine, it) }
 
         val resume = StringBuilder()
         info.matiereTexte?.let { resume.appendLine("Matière : $it") }
@@ -545,13 +787,12 @@ class MainActivity : AppCompatActivity() {
         }
         info.diametreMm?.let { resume.appendLine("Diamètre : ${it}mm") }
         info.dateFabricationTexte?.let { resume.appendLine("Date de fabrication : $it") }
-        info.semaineFabricationTexte?.let { resume.appendLine(it) }
         info.codeFabricant?.let { resume.appendLine("Code fabricant : $it") }
         dernierResume = resume.toString().trim()
         dernierDumpTexte = dernierResume + "\n\n--- DUMP BRUT (pour analyse) ---\n" + formaterDumpHex(dump)
 
         if (GestionnaireParametres.lireVibrationFinLecture(this)) vibrerConfirmation()
-        enregistrerDansHistorique(info.codeFabricant ?: "?", info.couleurHex ?: "")
+        if (enregistrerHistorique) enregistrerDansHistorique(info.codeFabricant ?: "?", info.couleurHex ?: "")
     }
 
     private fun vibrerConfirmation() {
@@ -734,6 +975,81 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this, "Erreur d'import : ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
+            CODE_CREATION -> {
+                if (resultCode != RESULT_OK) return
+                @Suppress("DEPRECATION")
+                val dump = data?.getByteArrayExtra("dump")
+                if (dump == null) {
+                    Toast.makeText(this, "Erreur : le tag créé n'a pas pu être récupéré.", Toast.LENGTH_LONG).show()
+                    return
+                }
+                val info = DecodeurElegoo.decoder(dump)
+                layoutLignesInfo.removeAllViews()
+                dernieresLignesInfo.clear()
+                vuCouleur.visibility = View.GONE
+                imgNfc.visibility = View.GONE
+                afficherResultats(info, dump, statutTexte = "Tag personnalisé créé — prêt à cloner sur une bobine vierge", enregistrerHistorique = false)
+                Toast.makeText(this, "Tag créé. Appuie sur \"Cloner sur une bobine vierge\".", Toast.LENGTH_LONG).show()
+            }
+            CODE_IMPORT_LOT -> {
+                if (resultCode != RESULT_OK) return
+                val uris = mutableListOf<android.net.Uri>()
+                val clip = data?.clipData
+                if (clip != null) {
+                    for (i in 0 until clip.itemCount) clip.getItemAt(i).uri?.let { uris.add(it) }
+                } else {
+                    data?.data?.let { uris.add(it) }
+                }
+                if (uris.isEmpty()) {
+                    Toast.makeText(this, "Aucun fichier sélectionné.", Toast.LENGTH_SHORT).show()
+                    return
+                }
+                val valides = mutableListOf<Pair<String, ByteArray>>()
+                val ignores = mutableListOf<String>()
+                for (uri in uris) {
+                    val nom = nomDepuisUri(uri)
+                    try {
+                        val octetsBruts = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        val dump = octetsBruts?.let { extraireDumpDepuisImport(it) }
+                        if (dump != null && dump.size >= ClonageElegoo.TAILLE_MIN_DUMP_SOURCE) {
+                            valides.add(nom to dump)
+                        } else {
+                            ignores.add(nom)
+                        }
+                    } catch (e: Exception) {
+                        ignores.add(nom)
+                    }
+                }
+                if (valides.isEmpty()) {
+                    Toast.makeText(this, "Aucun fichier reconnu parmi la sélection (ni dump exporté par cette appli, ni .bin/.hex valide).", Toast.LENGTH_LONG).show()
+                    return
+                }
+                if (ignores.isNotEmpty()) {
+                    Toast.makeText(this, "${ignores.size} fichier(s) ignoré(s) (non reconnus) : ${ignores.joinToString(", ")}", Toast.LENGTH_LONG).show()
+                }
+                lotAClone = valides
+                indexLotCourant = 0
+                resultatsLot.clear()
+                demarrerLotTagSuivant()
+            }
+            CODE_EXPORT_PLANCHE -> {
+                val uri = data?.data
+                if (resultCode != RESULT_OK || uri == null) return
+                // Regenere le PDF a cet instant plutot que de garder un document deja construit en
+                // memoire entre le clic et le retour du selecteur de fichiers (meme logique que
+                // contenuAExporter, mais le contenu est un PdfDocument, pas un texte - pas besoin
+                // de le faire survivre a une rotation d'ecran, le pire qui arrive est de recliquer).
+                val document = PlancheEtiquettes.genererPdf(PlancheEtiquettes.lister(this))
+                try {
+                    val flux = contentResolver.openOutputStream(uri) ?: throw IOException("fichier inaccessible")
+                    flux.use { document.writeTo(it) }
+                    Toast.makeText(this, "PDF enregistré.", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Erreur export PDF : ${e.message}", Toast.LENGTH_LONG).show()
+                } finally {
+                    document.close()
+                }
+            }
         }
     }
 
@@ -773,6 +1089,65 @@ class MainActivity : AppCompatActivity() {
                 .show()
         } catch (e: Exception) {
             Toast.makeText(this, "Erreur lecture historique : ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // ============================== PLANCHE D'ETIQUETTES ==============================
+    // Voir PlancheEtiquettes.kt pour le detail (grille generique 3x8 = 24/page A4, stockage,
+    // generation du PDF). Meme principe que celui deja en place sur l'autre appli de lecture RFID
+    // de Tomyn (Bambu) : ajoute le 09/10/2026 a sa demande.
+
+    private fun actualiserBoutonPlanche() {
+        val n = PlancheEtiquettes.nombre(this)
+        btnGenererPdfPlanche.text = if (n == 0) "Planche d'étiquettes (vide)" else "Planche d'étiquettes ($n)"
+    }
+
+    private fun ajouterEtiquetteAPlanche() {
+        val info = dernierInfoBobine
+        if (info == null) {
+            Toast.makeText(this, "Scanne d'abord une bobine Elegoo avant d'ajouter une étiquette.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        PlancheEtiquettes.ajouter(this, info)
+        actualiserBoutonPlanche()
+        Toast.makeText(this, "Étiquette ajoutée à la planche.", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun genererPdfPlanche() {
+        val etiquettes = PlancheEtiquettes.lister(this)
+        if (etiquettes.isEmpty()) {
+            AlertDialog.Builder(this)
+                .setTitle("Planche d'étiquettes")
+                .setMessage("Aucune étiquette ajoutée pour l'instant. Scanne une bobine puis appuie sur \"Ajouter à la planche d'étiquettes\".")
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+        val nbPages = (etiquettes.size + PlancheEtiquettes.ETIQUETTES_PAR_PAGE - 1) / PlancheEtiquettes.ETIQUETTES_PAR_PAGE
+        AlertDialog.Builder(this)
+            .setTitle("Planche d'étiquettes (${etiquettes.size})")
+            .setMessage("$nbPages page(s) A4 de ${PlancheEtiquettes.ETIQUETTES_PAR_PAGE} étiquettes chacune.")
+            .setPositiveButton("Générer le PDF") { _, _ -> exporterPlanchePdf() }
+            .setNeutralButton("Vider la planche") { _, _ ->
+                PlancheEtiquettes.vider(this)
+                actualiserBoutonPlanche()
+                Toast.makeText(this, "Planche vidée.", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Fermer", null)
+            .show()
+    }
+
+    private fun exporterPlanchePdf() {
+        val nomFichier = "etiquettes_elegoo_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(Date()) + ".pdf"
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/pdf"
+            putExtra(Intent.EXTRA_TITLE, nomFichier)
+        }
+        try {
+            startActivityForResult(intent, CODE_EXPORT_PLANCHE)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Impossible d'ouvrir le sélecteur de fichiers : ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -865,5 +1240,8 @@ class MainActivity : AppCompatActivity() {
     companion object {
         const val CODE_EXPORT = 4711
         const val CODE_IMPORT = 4712
+        const val CODE_EXPORT_PLANCHE = 4713
+        const val CODE_CREATION = 4714
+        const val CODE_IMPORT_LOT = 4715
     }
 }

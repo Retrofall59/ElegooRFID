@@ -100,6 +100,32 @@ object MaterialsElegoo {
         codeMatiere?.let { CODES_MATIERE[it] }
 
     /**
+     * Octet de poids fort des codes sous-type appartenant a une famille (ex. PLA -> 0x00, TPU ->
+     * 0x03) - voir les commentaires "Famille XXX (0xYYXX)" sur CODES_SOUS_TYPE ci-dessus. Utilise
+     * par CreationTagActivity pour ne proposer que les sous-types coherents avec la matiere
+     * choisie.
+     */
+    private val PREFIXE_SOUS_TYPE_PAR_FAMILLE: Map<String, Int> = mapOf(
+        "PLA" to 0x00, "PETG" to 0x01, "ABS" to 0x02, "TPU" to 0x03, "PA" to 0x04,
+        "CPE" to 0x05, "PC" to 0x06, "PVA" to 0x07, "ASA" to 0x08, "BVOH" to 0x09,
+        "EVA" to 0x0A, "HIPS" to 0x0B, "PP" to 0x0C, "PPA" to 0x0D, "PPS" to 0x0E
+    )
+
+    /**
+     * Sous-types connus pour une famille donnee (ex. "PLA" -> PLA, PLA+, PLA Pro...), tries par
+     * code - le premier est toujours le sous-type "generique" de la famille (meme nom qu'elle).
+     * Liste vide si la famille n'a pas de sous-types connus (BVOH, EVA, HIPS n'en ont qu'un : le
+     * generique).
+     */
+    fun sousTypesPourFamille(nomFamille: String): List<Pair<Int, String>> {
+        val prefixe = PREFIXE_SOUS_TYPE_PAR_FAMILLE[nomFamille] ?: return emptyList()
+        return CODES_SOUS_TYPE.entries
+            .filter { (it.key shr 8) == prefixe }
+            .sortedBy { it.key }
+            .map { it.key to it.value }
+    }
+
+    /**
      * Nom precis du sous-type (ex. "RAPID TPU 95A"), ou null si le code n'est pas reconnu OU
      * s'il est identique au nom de la famille (pour eviter d'afficher "Sous-type : TPU" en plus
      * de "Matière : TPU" quand ça n'apporte rien).

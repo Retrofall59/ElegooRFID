@@ -11,15 +11,20 @@ java -jar test.jar
 
 ## Contenu
 
-- **`TestDecodeurElegoo.kt`** — décode l'exemple numérique complet publié dans la documentation
-  officielle Elegoo (PLA-CF, 1,75 mm, 1000 g, rouge `#FF3700`, février 2025) et vérifie chaque
-  champ. **Valide que le décodeur applique correctement la spec telle qu'écrite — pas qu'elle
-  correspond à un vrai tag physique**, aucun dump réel n'étant encore disponible.
+- **`TestDecodeurElegoo.kt`** — décode les dumps de `dumps/` et vérifie chaque champ.
+- **`dumps/pla_{noir,bleu,jaune,blanc}_pascal_lb.bin`** — 4 **vrais** dumps de bobines Elegoo
+  (fournis par pascal_lb sur le forum). Ce sont ces fichiers (et la bobine de Damdam2959, pas
+  incluse ici) qui comptent comme "échantillon réel" dans les commentaires de `DecodeurElegoo.kt`
+  (ex. pour juger si le champ date/semaine varie réellement entre bobines).
+- **`dumps/pla_D3D3D3_editeur_elegoo-rfid-editor.bin`** — fichier généré par l'éditeur externe
+  [elegoo-rfid-editor](https://github.com/Savion/elegoo-rfid-editor), **PAS un vrai tag Elegoo**.
+  Sert uniquement à vérifier que le décodage d'une date de fabrication valide (mois 1-12)
+  fonctionne bien quand le champ est effectivement rempli - cas qu'aucun vrai tag rencontré à ce
+  jour n'a présenté (ils ont tous la même valeur `00 36`, un "mois 36" impossible - voir le
+  commentaire en tête de `DecodeurElegoo.kt`). Ne jamais le compter comme un échantillon réel.
 
-## Dès qu'une vraie bobine est scannée
+## Dès qu'une nouvelle vraie bobine est scannée
 
-Exporter son dump (bouton "Exporter le dernier dump" dans l'appli), l'ajouter ici dans un dossier
-`dumps/`, et ajouter un test qui compare le résultat décodé à ce qui est écrit sur l'étiquette
-réelle. Si tout correspond, retirer l'avertissement "pas encore validé" du README et de l'appli
-(bandeau dans `activity_main.xml`) et bumper la version vers 1.0. Si ça ne correspond pas, corriger
-les offsets dans `DecodeurElegoo.kt` à partir du vrai dump plutôt que de la doc.
+Exporter son dump (bouton "Exporter le dernier dump" dans l'appli), l'ajouter ici dans `dumps/`,
+et ajouter un test qui compare le résultat décodé à ce qui est écrit sur l'étiquette réelle. Si un
+champ ne correspond pas, corriger les offsets dans `DecodeurElegoo.kt` à partir du vrai dump.

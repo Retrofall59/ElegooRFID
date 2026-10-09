@@ -1,0 +1,217 @@
+package com.tomyn.elegoorfid
+
+import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.pdf.PdfDocument
+import java.io.File
+import java.io.IOException
+
+/**
+ * Planche d'etiquettes (ajoute le 09/10/2026 a la demande de Tomyn, meme principe que ce qu'il
+ * avait deja sur son autre appli de lecture RFID (Bambu) : apres une lecture reussie, un bouton
+ * ajoute l'etiquette de la bobine courante a une planche A4 qui s'accumule au fil des lectures ;
+ * un autre bouton genere le PDF final (plusieurs pages si plus de 24 etiquettes), pret a imprimer
+ * sur une planche autocollante.
+ *
+ * Grille GENERIQUE (demande expresse de Tomyn, pas de reference de planche precise pour
+ * l'instant) : 3 colonnes x 8 lignes = 24 etiquettes par page A4. Si ca ne correspond pas a la
+ * planche qu'il achete, il suffit d'ajuster COLONNES/LIGNES et les marges ci-dessous - tout le
+ * reste du calcul de mise en page en depend automatiquement.
+ *
+ * Stockage : un fichier texte simple (une etiquette par ligne, champs separes par ";"), dans le
+ * meme esprit que historique_scans.csv (voir MainActivity.enregistrerDansHistorique) - pas besoin
+ * d'une lib JSON pour une poignee de champs.
+ */
+object PlancheEtiquettes {
+
+    private const val NOM_FICHIER = "planche_etiquettes.txt"
+    private const val SEPARATEUR = ";"
+
+    // Mise en page de la grille - voir le commentaire en tete de fichier si besoin d'ajuster a une
+    // planche precise.
+    private const val COLONNES = 3
+    private const val LIGNES_PAR_PAGE = 8
+    const val ETIQUETTES_PAR_PAGE = COLONNES * LIGNES_PAR_PAGE
+
+    // Dimensions A4 en points PDF (1pt = 1/72 pouce ; 595 x 842 = A4 a 72dpi, standard PdfDocument).
+    private const val LARGEUR_PAGE = 595f
+    private const val HAUTEUR_PAGE = 842f
+    private const val MARGE = 24f
+
+    data class Etiquette(
+        val matiereTexte: String?,
+        val sousTypeTexte: String?,
+        val couleurHex: String?,
+        val poidsGrammes: Int?,
+        val diametreMm: Double?,
+        val tempMinC: Int?,
+        val tempMaxC: Int?,
+        val dateAffichee: String?
+    )
+
+    private fun fichier(context: Context): File = File(context.getExternalFilesDir(null), NOM_FICHIER)
+
+    /** Transforme une Etiquette en une ligne de texte stable (null -> champ vide). */
+    private fun versLigne(e: Etiquette): String = listOf(
+        e.matiereTexte ?: "",
+        e.sousTypeTexte ?: "",
+        e.couleurHex ?: "",
+        e.poidsGrammes?.toString() ?: "",
+        e.diametreMm?.toString() ?: "",
+        e.tempMinC?.toString() ?: "",
+        e.tempMaxC?.toString() ?: "",
+        e.dateAffichee ?: ""
+    ).joinToString(SEPARATEUR)
+
+    private fun depuisLigne(ligne: String): Etiquette? {
+        val champs = ligne.split(SEPARATEUR)
+        if (champs.size < 8) return null
+        return Etiquette(
+            matiereTexte = champs[0].ifBlank { null },
+            sousTypeTexte = champs[1].ifBlank { null },
+            couleurHex = champs[2].ifBlank { null },
+            poidsGrammes = champs[3].toIntOrNull(),
+            diametreMm = champs[4].toDoubleOrNull(),
+            tempMinC = champs[5].toIntOrNull(),
+            tempMaxC = champs[6].toIntOrNull(),
+            dateAffichee = champs[7].ifBlank { null }
+        )
+    }
+
+    fun ajouter(context: Context, info: DecodeurElegoo.InfoBobine) {
+        val etiquette = Etiquette(
+            matiereTexte = info.matiereTexte,
+            sousTypeTexte = info.sousTypeTexte,
+            couleurHex = info.couleurHex,
+            poidsGrammes = info.poidsGrammes,
+            diametreMm = info.diametreMm,
+            tempMinC = info.tempMinC,
+            tempMaxC = info.tempMaxC,
+            dateAffichee = info.dateFabricationTexte
+        )
+        try {
+            fichier(context).appendText(versLigne(etiquette) + "\n")
+        } catch (e: IOException) { /* pas grave si l'ajout echoue, l'utilisateur reessaiera */ }
+    }
+
+    fun lister(context: Context): List<Etiquette> {
+        val f = fichier(context)
+        if (!f.exists()) return emptyList()
+        return f.readLines().mapNotNull { if (it.isBlank()) null else depuisLigne(it) }
+    }
+
+    fun nombre(context: Context): Int = lister(context).size
+
+    fun vider(context: Context) {
+        try { fichier(context).delete() } catch (e: IOException) { /* rien a faire */ }
+    }
+
+    /**
+     * Genere le PDF (une ou plusieurs pages de 24 etiquettes) dans le cache de l'appli et renvoie
+     * le fichier, pret a etre propose en "Enregistrer sous" (voir MainActivity.exporterVers, qui
+     * lit un texte - ici on ecrit directement les octets du PDF sur l'Uri choisi, voir
+     * genererPdfVersFlux ci-dessous).
+     */
+    fun genererPdf(etiquettes: List<Etiquette>): PdfDocument {
+        val document = PdfDocument()
+        val largeurCellule = (LARGEUR_PAGE - 2 * MARGE) / COLONNES
+        val hauteurCellule = (HAUTEUR_PAGE - 2 * MARGE) / LIGNES_PAR_PAGE
+
+        val peintureCadre = Paint().apply {
+            color = Color.LTGRAY
+            style = Paint.Style.STROKE
+            strokeWidth = 0.75f
+        }
+        val peintureTitre = Paint().apply {
+            color = Color.BLACK
+            textSize = 10f
+            isFakeBoldText = true
+        }
+        val peintureTexte = Paint().apply {
+            color = Color.DKGRAY
+            textSize = 8f
+        }
+        val peintureCouleur = Paint().apply { style = Paint.Style.FILL }
+
+        val pages = etiquettes.chunked(ETIQUETTES_PAR_PAGE)
+        // Une planche vide (aucune etiquette) produit tout de meme une page, pour que "Generer le
+        // PDF" renvoie toujours quelque chose d'ouvrable plutot qu'un fichier PDF sans page valide.
+        val pagesAGenerer = if (pages.isEmpty()) listOf(emptyList()) else pages
+
+        for (etiquettesPage in pagesAGenerer) {
+            val pageInfo = PdfDocument.PageInfo.Builder(LARGEUR_PAGE.toInt(), HAUTEUR_PAGE.toInt(), 1).create()
+            val page = document.startPage(pageInfo)
+            val canvas: Canvas = page.canvas
+
+            for ((index, etiquette) in etiquettesPage.withIndex()) {
+                val colonne = index % COLONNES
+                val ligne = index / COLONNES
+                val x = MARGE + colonne * largeurCellule
+                val y = MARGE + ligne * hauteurCellule
+                dessinerEtiquette(canvas, etiquette, x, y, largeurCellule, hauteurCellule, peintureCadre, peintureTitre, peintureTexte, peintureCouleur)
+            }
+            // Cadres des cellules restees vides sur la derniere page, pour que la feuille reste
+            // decoupable/pliable proprement meme partiellement remplie.
+            for (index in etiquettesPage.size until ETIQUETTES_PAR_PAGE) {
+                val colonne = index % COLONNES
+                val ligne = index / COLONNES
+                val x = MARGE + colonne * largeurCellule
+                val y = MARGE + ligne * hauteurCellule
+                canvas.drawRect(x, y, x + largeurCellule, y + hauteurCellule, peintureCadre)
+            }
+
+            document.finishPage(page)
+        }
+
+        return document
+    }
+
+    private fun dessinerEtiquette(
+        canvas: Canvas,
+        e: Etiquette,
+        x: Float,
+        y: Float,
+        largeur: Float,
+        hauteur: Float,
+        cadre: Paint,
+        titre: Paint,
+        texte: Paint,
+        couleur: Paint
+    ) {
+        val rembourrage = 6f
+        canvas.drawRect(x, y, x + largeur, y + hauteur, cadre)
+
+        // Pastille de couleur a gauche, infos texte a droite.
+        val tailleAide = hauteur - 2 * rembourrage
+        val tailleCouleur = minOf(tailleAide, 22f)
+        var xTexte = x + rembourrage
+        if (e.couleurHex != null) {
+            try {
+                couleur.color = Color.parseColor("#${e.couleurHex}")
+                val rect = RectF(x + rembourrage, y + rembourrage, x + rembourrage + tailleCouleur, y + rembourrage + tailleCouleur)
+                canvas.drawOval(rect, couleur)
+                canvas.drawOval(rect, cadre)
+                xTexte = x + rembourrage + tailleCouleur + 6f
+            } catch (ex: IllegalArgumentException) { /* hex invalide : pas de pastille, le texte prend toute la largeur */ }
+        }
+
+        var yTexte = y + rembourrage + 9f
+        val titreTexte = listOfNotNull(e.matiereTexte, e.sousTypeTexte).joinToString(" ").ifBlank { "Bobine" }
+        canvas.drawText(titreTexte, xTexte, yTexte, titre)
+
+        val lignesInfo = mutableListOf<String>()
+        if (e.poidsGrammes != null) lignesInfo.add("${e.poidsGrammes}g")
+        if (e.diametreMm != null) lignesInfo.add("${e.diametreMm}mm")
+        if (e.tempMinC != null && e.tempMaxC != null) lignesInfo.add("${e.tempMinC}-${e.tempMaxC}°C")
+        e.dateAffichee?.let { lignesInfo.add(it) }
+
+        for (ligneTexte in lignesInfo) {
+            yTexte += 10f
+            if (yTexte > y + hauteur - rembourrage) break
+            canvas.drawText(ligneTexte, xTexte, yTexte, texte)
+        }
+    }
+}

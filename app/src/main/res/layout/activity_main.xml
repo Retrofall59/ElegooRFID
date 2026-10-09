@@ -148,6 +148,21 @@
             android:textSize="13sp"
             android:visibility="gone" />
 
+        <!-- Planche d'etiquettes (ajoute le 09/10/2026) : voir PlancheEtiquettes.kt - meme
+             principe que sur l'autre appli de lecture RFID de Tomyn (Bambu). Visible uniquement
+             apres une lecture reussie, meme logique que btnCloner. -->
+        <Button
+            android:id="@+id/btnAjouterPlanche"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/fond_bouton_secondaire"
+            android:text="Ajouter à la planche d'étiquettes"
+            android:textColor="@color/elegoo_noir"
+            android:textAllCaps="false"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
         <Button
             android:id="@+id/btnAnnulerClonage"
             android:layout_width="match_parent"
@@ -167,6 +182,33 @@
             android:layout_marginTop="14dp"
             android:background="@drawable/fond_bouton_secondaire"
             android:text="Exporter le dernier dump"
+            android:textColor="@color/elegoo_noir"
+            android:textAllCaps="false"
+            android:textSize="13sp" />
+
+        <!-- Clonage par lot (ajoute le 09/10/2026) : importe plusieurs dumps d'un coup (selection
+             multiple du selecteur de fichiers), puis guide l'ecriture tag par tag. Toujours
+             visible, independant de toute lecture prealable. -->
+        <Button
+            android:id="@+id/btnClonerLot"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/fond_bouton_secondaire"
+            android:text="Cloner un lot de dumps"
+            android:textColor="@color/elegoo_noir"
+            android:textAllCaps="false"
+            android:textSize="13sp" />
+
+        <!-- Creation de tag personnalise (ajoute le 09/10/2026) : ouvre CreationTagActivity, voir
+             EncodeurElegoo.kt. Toujours visible, independant de toute lecture prealable. -->
+        <Button
+            android:id="@+id/btnCreerTag"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/fond_bouton_secondaire"
+            android:text="Créer un tag personnalisé"
             android:textColor="@color/elegoo_noir"
             android:textAllCaps="false"
             android:textSize="13sp" />
@@ -231,6 +273,20 @@
                 android:textSize="12sp" />
 
         </LinearLayout>
+
+        <!-- Generation du PDF de la planche : texte dynamique (compteur), voir
+             MainActivity.actualiserBoutonPlanche(). Toujours visible, meme logique que
+             btnExporter/btnHistorique - independant de la derniere lecture. -->
+        <Button
+            android:id="@+id/btnGenererPdfPlanche"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/fond_bouton_secondaire"
+            android:text="Planche d'étiquettes (vide)"
+            android:textColor="@color/elegoo_noir"
+            android:textAllCaps="false"
+            android:textSize="13sp" />
 
         <Button
             android:id="@+id/btnRapportCompat"

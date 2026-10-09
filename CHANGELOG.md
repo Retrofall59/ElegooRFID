@@ -1,5 +1,79 @@
 # Changelog
 
+## v0.17-creation-lot-prevention (build 17)
+
+Trois améliorations demandées par Damdam2959, une fois l'app jugée "mature" :
+
+**1. Création de tag personnalisé** (`EncodeurElegoo.kt`, `CreationTagActivity.kt`) : nouveau
+bouton "Créer un tag personnalisé" - un formulaire (matière, sous-type, couleur, poids, diamètre,
+température buse) construit directement un dump Elegoo valide, affiché exactement comme après une
+vraie lecture (mêmes boutons Cloner/Exporter/Planche d'étiquettes ensuite). Plus besoin de passer
+par l'éditeur externe elegoo-rfid-editor - utile en particulier pour le futur filament recyclé
+Lyman de Damdam2959. Les zones inconnues ou non confirmées (date de fabrication, page 0x16) sont
+laissées à zéro plutôt que devinées. Vérifié par un test aller-retour encode→decode (PETG-CF,
+couleur, poids, diamètre, températures) : tous les champs ressortent identiques après décodage.
+
+**2. Clonage par lot** (`MainActivity.kt`, section CLONAGE PAR LOT) : nouveau bouton "Cloner un lot
+de dumps" - sélection multiple de fichiers (.txt/.bin/.hex, même parsing que l'import simple),
+puis l'appli guide tag par tag ("Approche le tag vierge pour X (2/5)...") sans ressaisir ni rouvrir
+le sélecteur à chaque fois. En cas d'échec sur un fichier : proposition de réessayer, passer au
+suivant, ou annuler le lot. Résumé final (réussis/total, liste des échecs).
+
+**3. Avertissement préventif avant effacement** (`MainActivity.effacerTagCible`) : les verrous
+(dynamique 0x28, statique 0x02, diagnostics ajoutés en v0.12/v0.13) sont maintenant lus AVANT de
+tenter l'effacement plutôt qu'après un échec. Si un verrou non nul est détecté, une confirmation
+est demandée avant de continuer. **Avertissement imparfait et assumé comme tel** : le mystère sur
+la page 0x03 qui résiste à l'effacement avec des verrous à `00 00` (voir v0.13, retours de
+Damdam2959 et pascal_lb) n'est pas résolu - cette fonctionnalité ne détecte que les verrous
+effectivement visibles dans ces deux registres, pas cette cause encore inconnue.
+
+Refactorisation interne au passage : le cœur du clonage (écriture + relecture de vérification) est
+extrait dans `executerClonage()`, sans effet de bord UI, pour être partagé entre le clonage simple
+et le clonage par lot plutôt que dupliqué.
+
+Vérifié par compilation réelle (kotlinc + stubs Android, plusieurs nouveaux stubs ajoutés :
+Spinner, AdapterView, ArrayAdapter, EditText, android.R) : zéro erreur. Non testé sur un vrai
+téléphone - à valider par Damdam2959, en particulier le scénario de clonage par lot sur plusieurs
+tags physiques et le formulaire de création sur un vrai tag vierge.
+
+## v0.16-retrait-semaine (build 16)
+
+**Retrait de l'affichage "Semaine XX"**, ajouté en v0.14. pascal_lb a fourni un 6e échantillon
+réel (dump exporté de son propre tag) : page 0x18 = `00 36 C8 00`, **exactement la même valeur**
+que sur les 5 échantillons précédents (la bobine de Damdam2959 et les 4 dumps déjà en local).
+Six échantillons de bobines/lots a priori différents donnant tous la même valeur, c'est bien plus
+cohérent avec une constante fixe ou réservée du format Elegoo qu'avec une vraie date qui varierait
+par bobine - afficher "Semaine 36" comme s'il s'agissait d'une info réelle serait trompeur.
+
+- Le champ `semaineFabricationTexte` est retiré de `InfoBobine` et de l'affichage (y compris de la
+  planche d'étiquettes, v0.15).
+- `dateFabricationTexte` (mois/année) reste inchangé - aucun échantillon réel n'a encore donné de
+  mois valide (1-12) de toute façon, donc ce champ n'a jamais rien affiché en pratique jusqu'ici.
+- Si un jour un vrai tag montre une valeur différente de `0x0036`, l'hypothèse (semaine ou autre)
+  redeviendra testable - voir le commentaire en tête de `DecodeurElegoo.kt`.
+- Vérifié par compilation réelle (kotlinc + stubs Android) : zéro erreur.
+
+## v0.15-planche-etiquettes (build 15)
+
+**Impression d'étiquettes**, demandée par Damdam2959 (même principe que sur son autre appli de
+lecture RFID, BambuRfidReader) : après une lecture réussie, un bouton "Ajouter à la planche
+d'étiquettes" enregistre l'étiquette de la bobine courante. Un second bouton ("Planche
+d'étiquettes (N)") ouvre un résumé (nombre d'étiquettes, nombre de pages) avec deux actions :
+générer le PDF (export via "Enregistrer sous", comme le dump), ou vider la planche.
+
+- Grille **générique** 3 colonnes × 8 lignes = 24 étiquettes par page A4 (pas de référence de
+  planche autocollante précise fournie pour l'instant - facile à ajuster plus tard dans
+  `PlancheEtiquettes.kt` si besoin).
+- Chaque étiquette : pastille de couleur, matière + sous-type, poids, diamètre, température buse,
+  date/semaine de fabrication si connue.
+- Stockage simple en fichier texte (une ligne par étiquette, comme `historique_scans.csv`) -
+  persiste entre les lectures et les fermetures de l'appli, jusqu'à "Vider la planche".
+- Le PDF est régénéré au moment de l'export (pas gardé en mémoire entre le clic et le retour du
+  sélecteur de fichiers) via `android.graphics.pdf.PdfDocument` - aucune dépendance ajoutée.
+- Vérifié par compilation réelle (kotlinc + stubs Android, y compris de nouveaux stubs
+  Canvas/Paint/RectF/PdfDocument) : zéro erreur. Non testé sur un vrai téléphone (pas de bobine
+  Elegoo physique chez Claude) - à valider par Damdam2959.
+
 ## v0.14-semaine-fabrication (build 14)
 
 **Date de fabrication revue** : sur la première vraie bobine testée par Damdam2959 (PLA noir),

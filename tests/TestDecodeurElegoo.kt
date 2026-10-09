@@ -49,6 +49,16 @@ fun main() {
     check("dump tronque : pas d'erreur, header et fabricant encore lisibles", tronque.headerValide == true && tronque.codeFabricant != null)
     check("dump tronque : couleur absente proprement (hors de portee)", tronque.couleurHex == null)
 
-    println(if (echecs == 0) "\n=> TOUT PASSE (verifie sur 4 vraies bobines : noir, bleu, jaune, blanc)" else "\n=> $echecs ECHEC(S)")
+    // Fichier genere par l'editeur externe elegoo-rfid-editor (PAS un vrai tag Elegoo - a ne
+    // jamais compter comme un "echantillon reel" dans les commentaires de DecodeurElegoo.kt, voir
+    // la decision du 09/10/2026 sur le champ date/semaine). Utile uniquement pour verifier que le
+    // decodage "mois valide" marche bien quand le champ EST rempli - aucun vrai tag vu a ce jour
+    // n'a ce cas.
+    val editeur = DecodeurElegoo.decoder(File("dumps/pla_D3D3D3_editeur_elegoo-rfid-editor.bin").readBytes())
+    check("editeur : matiere PLA", editeur.matiereTexte == "PLA", editeur.matiereTexte ?: "null")
+    check("editeur : couleur #D3D3D3", editeur.couleurHex == "D3D3D3", editeur.couleurHex ?: "null")
+    check("editeur : date de fabrication 01/2025 (mois valide, cas jamais vu sur un vrai tag)", editeur.dateFabricationTexte == "01/2025", editeur.dateFabricationTexte ?: "null")
+
+    println(if (echecs == 0) "\n=> TOUT PASSE (verifie sur 4 vraies bobines : noir, bleu, jaune, blanc + 1 fichier d'editeur pour la date)" else "\n=> $echecs ECHEC(S)")
     if (echecs > 0) System.exit(1)
 }
