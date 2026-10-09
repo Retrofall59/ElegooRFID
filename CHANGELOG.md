@@ -1,5 +1,49 @@
 # Changelog
 
+## v0.23-fix-planche-grille (build 23)
+
+**Correctif d'un vrai bug remonté par Tomyn en testant la 0.22** : le menu "Planche d'étiquettes"
+n'affichait plus que le titre, le message et "FERMER" - plus aucune des 3 actions (Imprimer,
+Générer le PDF, Vider la planche).
+
+**Cause, cash et franc** : `setMessage()` et `setItems()` se disputent la même zone de contenu sur
+un vrai `AlertDialog` Android - impossible de les cumuler. Le message gagnait silencieusement et
+toute la liste d'actions disparaissait, sans aucune erreur ni avertissement nulle part (ni à la
+compilation, ni à l'exécution). C'est passé inaperçu ici pour la même raison que le bug
+`ParcelFileDescriptor` de la 0.22 : mon stub `AlertDialog` acceptait les deux appels sans se
+plaindre, donc rien ne pouvait le détecter avant un vrai test sur téléphone - exactement ce que
+Tomyn vient de faire. **Corrigé** en déplaçant l'info de pagination dans le titre du dialogue (qui
+cohabite sans problème avec `setItems`) plutôt que dans un message séparé. J'ai aussi ajouté une
+vérification à l'exécution dans mon propre stub `AlertDialog` (`check()` si les deux sont appelés
+ensemble) pour qu'un futur test manuel de ce genre de code la révèle tout de suite plutôt que de
+rester invisible.
+
+**Trois améliorations supplémentaires**, proposées par Claude pendant la compilation de la 0.22 et
+validées par Damdam2959 :
+
+**1. Écran maintenu allumé pendant une lecture** (`onResume`/`onPause`, `FLAG_KEEP_SCREEN_ON`) :
+surtout utile pendant un clonage par lot, où le téléphone pouvait sinon s'éteindre entre deux tags
+et obliger à déverrouiller en plein milieu de la manip.
+
+**2. Vérification de l'en-tête avant de cloner un dump importé** (`CODE_IMPORT`/`CODE_IMPORT_LOT`
+dans `MainActivity`) : avant, seule la taille du fichier était vérifiée. Un fichier de la bonne
+taille mais sans l'en-tête Elegoo (0x36) déclenche maintenant un avertissement ("fichier suspect,
+peut-être corrompu ou dans un autre format") avec confirmation requise avant de continuer - pour
+l'import simple comme pour le clonage par lot (liste des fichiers concernés dans
+l'avertissement).
+
+**3. Grille d'étiquettes réglable** (`GestionnaireParametres.lireColonnesEtiquettes`/
+`lireLignesEtiquettes`, nouvelle section dans les Paramètres) : 3×8 par défaut comme avant, mais
+modifiable sans recompiler si Tomyn change un jour de planche autocollante. `PlancheEtiquettes`
+(génération PDF, impression directe, pagination) et `ImpressionPlanche` prennent maintenant le
+`Context` pour lire ce réglage.
+
+Vérifié par compilation réelle (zéro erreur après correction des deux conflits de stub rencontrés
+en cours de route - voir ci-dessus), par les 21 fichiers XML (manifeste inchangé, layout
+paramètres modifié - toujours zéro erreur), et par les tests unitaires du décodeur (zéro
+régression). **Non testé en conditions réelles** : le nouveau menu "Planche" corrigé, et la grille
+réglable avec un nombre de colonnes/lignes différent de 3×8.
+
 ## v0.22-fix-impression (build 22)
 
 **Correctif d'un vrai bug de compilation signalé par Damdam2959** (build GitHub Actions, v0.20) :

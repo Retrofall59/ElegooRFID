@@ -107,6 +107,97 @@
         <androidx.cardview.widget.CardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginBottom="14dp"
+            app:cardCornerRadius="14dp"
+            app:cardElevation="4dp"
+            app:cardBackgroundColor="@color/carte_blanc">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Grille d'étiquettes (A4)"
+                    android:textColor="@color/texte_principal"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Par défaut 3 colonnes × 8 lignes = 24 étiquettes/page. À ajuster si ta planche autocollante est différente."
+                    android:textColor="@color/texte_secondaire"
+                    android:textSize="12sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="10dp"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Colonnes"
+                        android:textColor="@color/texte_principal"
+                        android:textSize="13sp" />
+
+                    <EditText
+                        android:id="@+id/champColonnesEtiquettes"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="8dp"
+                        android:layout_marginEnd="14dp"
+                        android:inputType="number"
+                        android:maxLength="2"
+                        android:textColor="@color/texte_principal"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Lignes"
+                        android:textColor="@color/texte_principal"
+                        android:textSize="13sp" />
+
+                    <EditText
+                        android:id="@+id/champLignesEtiquettes"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="8dp"
+                        android:inputType="number"
+                        android:maxLength="2"
+                        android:textColor="@color/texte_principal"
+                        android:textSize="14sp" />
+
+                </LinearLayout>
+
+                <Button
+                    android:id="@+id/btnEnregistrerGrilleEtiquettes"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:layout_marginTop="10dp"
+                    android:background="@drawable/fond_bouton_secondaire"
+                    android:text="Enregistrer la grille"
+                    android:textColor="@color/texte_principal"
+                    android:textAllCaps="false"
+                    android:textSize="13sp" />
+
+            </LinearLayout>
+
+        </androidx.cardview.widget.CardView>
+
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             app:cardCornerRadius="14dp"
             app:cardElevation="4dp"
             app:cardBackgroundColor="@color/carte_blanc">

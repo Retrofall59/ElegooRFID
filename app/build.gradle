@@ -20,8 +20,8 @@ android {
         applicationId "com.tomyn.elegoorfid"
         minSdk 26
         targetSdk 34
-        versionCode 22
-        versionName "0.22-fix-impression"
+        versionCode 23
+        versionName "0.23-fix-planche-grille"
     }
 
     buildTypes {

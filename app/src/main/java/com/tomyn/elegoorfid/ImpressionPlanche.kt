@@ -1,5 +1,6 @@
 package com.tomyn.elegoorfid
 
+import android.content.Context
 import android.graphics.pdf.PdfDocument
 import android.os.CancellationSignal
 import android.os.ParcelFileDescriptor
@@ -21,11 +22,15 @@ import java.io.IOException
  * du fabricant, ou Mopria/Impression par defaut Android) - cette appli n'a besoin de rien savoir
  * sur le reseau ni sur le modele d'imprimante, c'est le travail du framework d'impression.
  *
- * Reutilise exactement PlancheEtiquettes.genererPdf() : meme mise en page, meme grille 3x8, que
- * ce soit pour "Generer le PDF" (export vers un fichier) ou "Imprimer" (ce fichier) - un seul
- * endroit a ajuster si Tomyn passe un jour a une planche de references precises.
+ * Reutilise exactement PlancheEtiquettes.genererPdf() : meme mise en page, meme grille (reglable
+ * depuis les Parametres - v0.23), que ce soit pour "Generer le PDF" (export vers un fichier) ou
+ * "Imprimer" (ce fichier) - un seul endroit a ajuster si Tomyn passe un jour a une planche de
+ * references precises.
  */
-class ImpressionPlanche(private val etiquettes: List<PlancheEtiquettes.Etiquette>) : PrintDocumentAdapter() {
+class ImpressionPlanche(
+    private val context: Context,
+    private val etiquettes: List<PlancheEtiquettes.Etiquette>
+) : PrintDocumentAdapter() {
 
     private var document: PdfDocument? = null
 
@@ -42,7 +47,7 @@ class ImpressionPlanche(private val etiquettes: List<PlancheEtiquettes.Etiquette
         }
         val info = PrintDocumentInfo.Builder("etiquettes_elegoo.pdf")
             .setContentType(PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
-            .setPageCount(PlancheEtiquettes.nombrePages(etiquettes))
+            .setPageCount(PlancheEtiquettes.nombrePages(etiquettes, context))
             .build()
         // "true" (mise en page toujours consideree comme changee) : plus simple et sans risque -
         // ca force juste une regeneration du PDF dans onWrite a chaque fois, ce qui est de toute
@@ -61,7 +66,7 @@ class ImpressionPlanche(private val etiquettes: List<PlancheEtiquettes.Etiquette
             return
         }
         try {
-            document = PlancheEtiquettes.genererPdf(etiquettes)
+            document = PlancheEtiquettes.genererPdf(etiquettes, context)
             // destination est un ParcelFileDescriptor (pas un FileDescriptor brut) - c'est le
             // vrai type attendu par l'API Android ici, meme si "FileDescriptor" paraissait plus
             // direct. AutoCloseOutputStream se charge aussi de fermer le descripteur derriere.

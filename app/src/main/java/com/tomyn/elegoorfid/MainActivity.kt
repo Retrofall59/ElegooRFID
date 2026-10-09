@@ -19,6 +19,7 @@ import android.print.PrintManager
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
+import android.view.WindowManager
 import android.view.animation.AnimationUtils
 import android.widget.Button
 import android.widget.EditText
@@ -153,10 +154,15 @@ class MainActivity : AppCompatActivity() {
             NfcAdapter.FLAG_READER_NFC_A,
             null
         )
+        // Ecran maintenu allume pendant qu'une lecture est possible (ajoute en v0.23 a la demande
+        // de Tomyn) : surtout utile pendant un clonage par lot, ou le telephone peut sinon
+        // s'eteindre entre deux tags et obliger a deverrouiller en plein milieu de la manip.
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
     override fun onPause() {
         super.onPause()
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (::nfcAdapter.isInitialized) nfcAdapter.disableReaderMode(this)
     }
 
@@ -651,6 +657,15 @@ class MainActivity : AppCompatActivity() {
     private fun nomDepuisUri(uri: android.net.Uri): String =
         uri.toString().substringAfterLast('/').substringBefore('?').ifBlank { "fichier" }
 
+    /** Lance effectivement le lot une fois les fichiers valides connus (apres l'avertissement
+     * en-tete eventuel, voir CODE_IMPORT_LOT ci-dessus). */
+    private fun demarrerLotAvecValides(valides: List<Pair<String, ByteArray>>) {
+        lotAClone = valides
+        indexLotCourant = 0
+        resultatsLot.clear()
+        demarrerLotTagSuivant()
+    }
+
     private fun demarrerLotTagSuivant() {
         enAttenteTagLot = true
         btnCloner.visibility = View.GONE
@@ -950,6 +965,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Accepte definitivement un dump importe (apres validation ou confirmation malgre l'avertissement) comme source de clonage. */
+    private fun accepterDumpImporte(dump: ByteArray) {
+        dernierDumpBrut = dump
+        dernierScanReussi = true
+        btnCloner.visibility = View.VISIBLE
+        txtStatut.text = "Dump importé (${dump.size} octets) - prêt à cloner sur un tag vierge."
+        Toast.makeText(this, "Dump importé, appuie sur \"Cloner sur une bobine vierge\".", Toast.LENGTH_LONG).show()
+    }
+
     /**
      * Relit le texte d'un fichier importe et en extrait le dump brut, au format produit par
      * formaterDumpHex() (lignes "Page XX : AA BB CC DD", a partir de la page 0). Les eventuelles
@@ -1058,11 +1082,21 @@ class MainActivity : AppCompatActivity() {
                         Toast.makeText(this, "Fichier non reconnu : ni un dump exporté par cette appli, ni un .bin/.hex valide.", Toast.LENGTH_LONG).show()
                         return
                     }
-                    dernierDumpBrut = dump
-                    dernierScanReussi = true
-                    btnCloner.visibility = View.VISIBLE
-                    txtStatut.text = "Dump importé (${dump.size} octets) - prêt à cloner sur un tag vierge."
-                    Toast.makeText(this, "Dump importé, appuie sur \"Cloner sur une bobine vierge\".", Toast.LENGTH_LONG).show()
+                    if (DecodeurElegoo.decoder(dump).headerValide != true) {
+                        // Avertissement (ajoute en v0.23 a la demande de Tomyn), pas un blocage
+                        // pur : la taille seule ne suffit pas a garantir que le fichier est un
+                        // vrai dump Elegoo (corrompu, tronque autrement, ou simplement un autre
+                        // format de meme taille) - mais certains usages volontaires (filament
+                        // recycle maison, test) peuvent justifier de continuer malgre tout.
+                        AlertDialog.Builder(this)
+                            .setTitle("Fichier importé suspect")
+                            .setMessage("La taille est correcte, mais l'en-tête attendu (0x36) pour un dump Elegoo est absent. Le fichier est peut-être corrompu ou dans un autre format.\n\nContinuer quand même avant de cloner ?")
+                            .setPositiveButton("Continuer quand même") { _, _ -> accepterDumpImporte(dump) }
+                            .setNegativeButton("Annuler", null)
+                            .show()
+                        return
+                    }
+                    accepterDumpImporte(dump)
                 } catch (e: Exception) {
                     Toast.makeText(this, "Erreur d'import : ${e.message}", Toast.LENGTH_LONG).show()
                 }
@@ -1098,6 +1132,11 @@ class MainActivity : AppCompatActivity() {
                 }
                 val valides = mutableListOf<Pair<String, ByteArray>>()
                 val ignores = mutableListOf<String>()
+                // Ajoute en v0.23 a la demande de Tomyn : un fichier qui a la bonne taille mais
+                // pas l'en-tete Elegoo (0x36) est garde dans "valides" (meme comportement
+                // qu'avant) mais signale a part - on previent avant de lancer le lot plutot que
+                // de cloner silencieusement un fichier peut-etre corrompu sur un tag vierge.
+                val sansEnteteValide = mutableListOf<String>()
                 for (uri in uris) {
                     val nom = nomDepuisUri(uri)
                     try {
@@ -1105,6 +1144,7 @@ class MainActivity : AppCompatActivity() {
                         val dump = octetsBruts?.let { extraireDumpDepuisImport(it) }
                         if (dump != null && dump.size >= ClonageElegoo.TAILLE_MIN_DUMP_SOURCE) {
                             valides.add(nom to dump)
+                            if (DecodeurElegoo.decoder(dump).headerValide != true) sansEnteteValide.add(nom)
                         } else {
                             ignores.add(nom)
                         }
@@ -1119,10 +1159,19 @@ class MainActivity : AppCompatActivity() {
                 if (ignores.isNotEmpty()) {
                     Toast.makeText(this, "${ignores.size} fichier(s) ignoré(s) (non reconnus) : ${ignores.joinToString(", ")}", Toast.LENGTH_LONG).show()
                 }
-                lotAClone = valides
-                indexLotCourant = 0
-                resultatsLot.clear()
-                demarrerLotTagSuivant()
+                if (sansEnteteValide.isNotEmpty()) {
+                    AlertDialog.Builder(this)
+                        .setTitle("Fichiers suspects dans le lot")
+                        .setMessage(
+                            "${sansEnteteValide.size} fichier(s) sur ${valides.size} n'ont pas l'en-tête Elegoo attendu (0x36) - peut-être corrompus ou dans un autre format : ${sansEnteteValide.joinToString(", ")}.\n\n" +
+                                "Continuer le clonage du lot entier malgré tout ?"
+                        )
+                        .setPositiveButton("Continuer le lot") { _, _ -> demarrerLotAvecValides(valides) }
+                        .setNegativeButton("Annuler", null)
+                        .show()
+                } else {
+                    demarrerLotAvecValides(valides)
+                }
             }
             CODE_EXPORT_PLANCHE -> {
                 val uri = data?.data
@@ -1131,7 +1180,7 @@ class MainActivity : AppCompatActivity() {
                 // memoire entre le clic et le retour du selecteur de fichiers (meme logique que
                 // contenuAExporter, mais le contenu est un PdfDocument, pas un texte - pas besoin
                 // de le faire survivre a une rotation d'ecran, le pire qui arrive est de recliquer).
-                val document = PlancheEtiquettes.genererPdf(PlancheEtiquettes.lister(this))
+                val document = PlancheEtiquettes.genererPdf(PlancheEtiquettes.lister(this), this)
                 try {
                     val flux = contentResolver.openOutputStream(uri) ?: throw IOException("fichier inaccessible")
                     flux.use { document.writeTo(it) }
@@ -1311,14 +1360,19 @@ class MainActivity : AppCompatActivity() {
                 .show()
             return
         }
-        val nbPages = PlancheEtiquettes.nombrePages(etiquettes)
+        val nbPages = PlancheEtiquettes.nombrePages(etiquettes, this)
         // setItems plutot que les 3 emplacements de boutons habituels (positif/neutre/negatif) :
         // ca permet d'ajouter "Imprimer" (v0.20) sans retirer "Générer le PDF" ni "Vider la
         // planche" - AlertDialog ne propose que 3 boutons fixes, setItems n'a pas cette limite.
+        //
+        // CORRIGE v0.23 : setMessage() et setItems() ne peuvent PAS cohabiter sur un vrai
+        // AlertDialog - les deux se disputent la meme zone de contenu, et le message gagnait
+        // silencieusement, faisant disparaitre toute la liste d'actions (bug remonte par Tomyn :
+        // plus que le titre, le message et "FERMER", aucune des 3 actions). L'info de pagination
+        // passe donc dans le TITRE, qui lui cohabite sans probleme avec setItems.
         val options = arrayOf("Imprimer", "Générer le PDF", "Vider la planche")
         AlertDialog.Builder(this)
-            .setTitle("Planche d'étiquettes (${etiquettes.size})")
-            .setMessage("$nbPages page(s) A4 de ${PlancheEtiquettes.ETIQUETTES_PAR_PAGE} étiquettes chacune.")
+            .setTitle("Planche (${etiquettes.size} étiquettes, $nbPages page(s) A4 de ${PlancheEtiquettes.etiquettesParPage(this)})")
             .setItems(options) { _, index ->
                 when (index) {
                     0 -> imprimerPlanche(etiquettes)
@@ -1360,7 +1414,7 @@ class MainActivity : AppCompatActivity() {
         try {
             val gestionnaireImpression = getSystemService(Context.PRINT_SERVICE) as PrintManager
             val nomTache = "Étiquettes Elegoo " + SimpleDateFormat("dd-MM-yyyy HH:mm", Locale.FRANCE).format(Date())
-            gestionnaireImpression.print(nomTache, ImpressionPlanche(etiquettes), PrintAttributes.Builder().build())
+            gestionnaireImpression.print(nomTache, ImpressionPlanche(this, etiquettes), PrintAttributes.Builder().build())
         } catch (e: Exception) {
             Toast.makeText(this, "Impossible d'ouvrir l'impression : ${e.message}", Toast.LENGTH_LONG).show()
         }

@@ -21,10 +21,11 @@ import java.io.IOException
  * un autre bouton genere le PDF final (plusieurs pages si plus de 24 etiquettes), pret a imprimer
  * sur une planche autocollante.
  *
- * Grille GENERIQUE (demande expresse de Tomyn, pas de reference de planche precise pour
- * l'instant) : 3 colonnes x 8 lignes = 24 etiquettes par page A4. Si ca ne correspond pas a la
- * planche qu'il achete, il suffit d'ajuster COLONNES/LIGNES et les marges ci-dessous - tout le
- * reste du calcul de mise en page en depend automatiquement.
+ * Grille GENERIQUE (demande expresse de Tomyn, pas de reference de planche precise au depart) :
+ * 3 colonnes x 8 lignes = 24 etiquettes par page A4 par defaut. Reglable depuis les Parametres
+ * depuis la v0.23 (voir GestionnaireParametres.lireColonnesEtiquettes/lireLignesEtiquettes) pour
+ * s'adapter a une autre planche autocollante sans toucher au code - les marges ci-dessous restent
+ * en dur, tout le reste du calcul de mise en page en depend automatiquement.
  *
  * Stockage : un fichier texte simple (une etiquette par ligne, champs separes par ";"), dans le
  * meme esprit que historique_scans.csv (voir MainActivity.enregistrerDansHistorique) - pas besoin
@@ -48,11 +49,11 @@ object PlancheEtiquettes {
 
     private fun lienQrPourDump(dumpHex: String): String = "$SCHEME_QR://$HOTE_QR/$dumpHex"
 
-    // Mise en page de la grille - voir le commentaire en tete de fichier si besoin d'ajuster a une
-    // planche precise.
-    private const val COLONNES = 3
-    private const val LIGNES_PAR_PAGE = 8
-    const val ETIQUETTES_PAR_PAGE = COLONNES * LIGNES_PAR_PAGE
+    // Mise en page de la grille (v0.23 : reglable, voir le commentaire en tete de fichier) -
+    // valeurs par defaut 3x8 si rien n'a ete configure dans les Parametres.
+    private fun colonnes(context: Context): Int = GestionnaireParametres.lireColonnesEtiquettes(context)
+    private fun lignesParPage(context: Context): Int = GestionnaireParametres.lireLignesEtiquettes(context)
+    fun etiquettesParPage(context: Context): Int = colonnes(context) * lignesParPage(context)
 
     // Dimensions A4 en points PDF (1pt = 1/72 pouce ; 595 x 842 = A4 a 72dpi, standard PdfDocument).
     private const val LARGEUR_PAGE = 595f
@@ -139,23 +140,28 @@ object PlancheEtiquettes {
      * genere quand meme une page, voir genererPdf). Utilise par l'impression directe (voir
      * ImpressionPlanche.kt) pour annoncer le nombre de pages a l'imprimante avant meme d'avoir
      * genere le PDF. */
-    fun nombrePages(etiquettes: List<Etiquette>): Int =
-        if (etiquettes.isEmpty()) 1 else (etiquettes.size + ETIQUETTES_PAR_PAGE - 1) / ETIQUETTES_PAR_PAGE
+    fun nombrePages(etiquettes: List<Etiquette>, context: Context): Int {
+        val parPage = etiquettesParPage(context)
+        return if (etiquettes.isEmpty()) 1 else (etiquettes.size + parPage - 1) / parPage
+    }
 
     fun vider(context: Context) {
         try { fichier(context).delete() } catch (e: IOException) { /* rien a faire */ }
     }
 
     /**
-     * Genere le PDF (une ou plusieurs pages de 24 etiquettes) dans le cache de l'appli et renvoie
-     * le fichier, pret a etre propose en "Enregistrer sous" (voir MainActivity.exporterVers, qui
-     * lit un texte - ici on ecrit directement les octets du PDF sur l'Uri choisi, voir
-     * genererPdfVersFlux ci-dessous).
+     * Genere le PDF (une ou plusieurs pages, grille reglable - voir colonnes/lignesParPage) dans
+     * le cache de l'appli et renvoie le fichier, pret a etre propose en "Enregistrer sous" (voir
+     * MainActivity.exporterVers, qui lit un texte - ici on ecrit directement les octets du PDF
+     * sur l'Uri choisi, voir genererPdfVersFlux ci-dessous).
      */
-    fun genererPdf(etiquettes: List<Etiquette>): PdfDocument {
+    fun genererPdf(etiquettes: List<Etiquette>, context: Context): PdfDocument {
         val document = PdfDocument()
-        val largeurCellule = (LARGEUR_PAGE - 2 * MARGE) / COLONNES
-        val hauteurCellule = (HAUTEUR_PAGE - 2 * MARGE) / LIGNES_PAR_PAGE
+        val nbColonnes = colonnes(context)
+        val nbLignes = lignesParPage(context)
+        val parPage = nbColonnes * nbLignes
+        val largeurCellule = (LARGEUR_PAGE - 2 * MARGE) / nbColonnes
+        val hauteurCellule = (HAUTEUR_PAGE - 2 * MARGE) / nbLignes
 
         val peintureCadre = Paint().apply {
             color = Color.LTGRAY
@@ -173,7 +179,7 @@ object PlancheEtiquettes {
         }
         val peintureCouleur = Paint().apply { style = Paint.Style.FILL }
 
-        val pages = etiquettes.chunked(ETIQUETTES_PAR_PAGE)
+        val pages = etiquettes.chunked(parPage)
         // Une planche vide (aucune etiquette) produit tout de meme une page, pour que "Generer le
         // PDF" renvoie toujours quelque chose d'ouvrable plutot qu'un fichier PDF sans page valide.
         val pagesAGenerer = if (pages.isEmpty()) listOf(emptyList()) else pages
@@ -184,17 +190,17 @@ object PlancheEtiquettes {
             val canvas: Canvas = page.canvas
 
             for ((index, etiquette) in etiquettesPage.withIndex()) {
-                val colonne = index % COLONNES
-                val ligne = index / COLONNES
+                val colonne = index % nbColonnes
+                val ligne = index / nbColonnes
                 val x = MARGE + colonne * largeurCellule
                 val y = MARGE + ligne * hauteurCellule
                 dessinerEtiquette(canvas, etiquette, x, y, largeurCellule, hauteurCellule, peintureCadre, peintureTitre, peintureTexte, peintureCouleur)
             }
             // Cadres des cellules restees vides sur la derniere page, pour que la feuille reste
             // decoupable/pliable proprement meme partiellement remplie.
-            for (index in etiquettesPage.size until ETIQUETTES_PAR_PAGE) {
-                val colonne = index % COLONNES
-                val ligne = index / COLONNES
+            for (index in etiquettesPage.size until parPage) {
+                val colonne = index % nbColonnes
+                val ligne = index / nbColonnes
                 val x = MARGE + colonne * largeurCellule
                 val y = MARGE + ligne * hauteurCellule
                 canvas.drawRect(x, y, x + largeurCellule, y + hauteurCellule, peintureCadre)
