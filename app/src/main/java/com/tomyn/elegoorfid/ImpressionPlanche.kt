@@ -2,12 +2,11 @@ package com.tomyn.elegoorfid
 
 import android.graphics.pdf.PdfDocument
 import android.os.CancellationSignal
+import android.os.ParcelFileDescriptor
 import android.print.PageRange
 import android.print.PrintAttributes
 import android.print.PrintDocumentAdapter
 import android.print.PrintDocumentInfo
-import java.io.FileDescriptor
-import java.io.FileOutputStream
 import java.io.IOException
 
 /**
@@ -53,7 +52,7 @@ class ImpressionPlanche(private val etiquettes: List<PlancheEtiquettes.Etiquette
 
     override fun onWrite(
         pages: Array<out PageRange>?,
-        destination: FileDescriptor?,
+        destination: ParcelFileDescriptor?,
         cancellationSignal: CancellationSignal?,
         callback: WriteResultCallback?
     ) {
@@ -63,7 +62,10 @@ class ImpressionPlanche(private val etiquettes: List<PlancheEtiquettes.Etiquette
         }
         try {
             document = PlancheEtiquettes.genererPdf(etiquettes)
-            FileOutputStream(destination).use { flux ->
+            // destination est un ParcelFileDescriptor (pas un FileDescriptor brut) - c'est le
+            // vrai type attendu par l'API Android ici, meme si "FileDescriptor" paraissait plus
+            // direct. AutoCloseOutputStream se charge aussi de fermer le descripteur derriere.
+            ParcelFileDescriptor.AutoCloseOutputStream(destination).use { flux ->
                 document?.writeTo(flux)
             }
             callback?.onWriteFinished(arrayOf(PageRange.ALL_PAGES))

@@ -26,6 +26,18 @@
             <meta-data
                 android:name="android.nfc.action.TECH_DISCOVERED"
                 android:resource="@xml/nfc_tech_filter" />
+
+            <!-- Lien "elegoorfid://dump/<hex>" encode dans le QR des etiquettes (v0.21, voir
+                 PlancheEtiquettes.lienQrPourDump) : permet a une appli de scan QR (ou au
+                 detecteur QR integre a la plupart des appareils photo Android) de proposer
+                 "Ouvrir avec ElegooRFID" sans passer par le NFC - voir
+                 MainActivity.traiterIntentEventuel pour la reception. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="elegoorfid" android:host="dump" />
+            </intent-filter>
         </activity>
 
         <activity

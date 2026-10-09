@@ -21,6 +21,12 @@ class SettingsActivity : AppCompatActivity() {
             GestionnaireParametres.ecrireVibrationFinLecture(this, active)
         }
 
+        val interrupteurSon = findViewById<Switch>(R.id.interrupteurSon)
+        interrupteurSon.isChecked = GestionnaireParametres.lireSonFinLecture(this)
+        interrupteurSon.setOnCheckedChangeListener { _, active ->
+            GestionnaireParametres.ecrireSonFinLecture(this, active)
+        }
+
         findViewById<TextView>(R.id.texteVersion).text = try {
             val infos = packageManager.getPackageInfo(packageName, 0)
             "ElegooRFID — version ${infos.versionName}"

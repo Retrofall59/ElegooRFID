@@ -35,6 +35,19 @@ object PlancheEtiquettes {
     private const val NOM_FICHIER = "planche_etiquettes.txt"
     private const val SEPARATEUR = ";"
 
+    // Lien encode dans le QR de chaque etiquette (voir dessinerQr plus bas et l'intent-filter
+    // correspondant dans AndroidManifest.xml). Change en v0.21 : avant, le QR codait le hex brut
+    // du dump, "exactement le texte qu'accepte deja Importer un dump pour cloner" d'apres le
+    // commentaire d'origine (v0.18) - en realite rien ne consommait ce texte scanne, cette partie
+    // de la fonctionnalite n'avait jamais ete cablee jusqu'au bout. Avec un vrai lien
+    // "elegoorfid://dump/<hex>", n'importe quelle appli de scan QR (y compris le detecteur
+    // integre a la plupart des appareils photo Android) propose directement "Ouvrir avec
+    // ElegooRFID" - voir MainActivity.traiterIntentEventuel pour la reception.
+    private const val SCHEME_QR = "elegoorfid"
+    private const val HOTE_QR = "dump"
+
+    private fun lienQrPourDump(dumpHex: String): String = "$SCHEME_QR://$HOTE_QR/$dumpHex"
+
     // Mise en page de la grille - voir le commentaire en tete de fichier si besoin d'ajuster a une
     // planche precise.
     private const val COLONNES = 3
@@ -214,7 +227,7 @@ object PlancheEtiquettes {
         if (e.dumpHex != null) {
             val xQr = x + largeur - rembourrage - tailleQr
             val yQr = y + rembourrage
-            dessinerQr(canvas, e.dumpHex, xQr, yQr, tailleQr)
+            dessinerQr(canvas, lienQrPourDump(e.dumpHex), xQr, yQr, tailleQr)
         }
 
         // Pastille de couleur a gauche, infos texte a droite.
@@ -249,15 +262,16 @@ object PlancheEtiquettes {
     }
 
     /**
-     * Dessine un QR code codant le dump complet (hexa) directement sur le Canvas, module par
-     * module (pas de Bitmap intermediaire) - permet de rescanner l'etiquette papier plus tard
-     * pour recloner sans retrouver le fichier d'origine (le contenu du QR est exactement le texte
-     * qu'accepte deja "Importer un dump pour cloner", voir extraireDumpDepuisImport).
+     * Dessine un QR code encodant un lien (voir lienQrPourDump) directement sur le Canvas, module
+     * par module (pas de Bitmap intermediaire) - permet de rescanner l'etiquette papier plus tard
+     * pour consulter les infos de la bobine ou la recloner, SANS le tag NFC a portee (utile si le
+     * tag est abime/illisible mais l'etiquette papier existe encore) - voir
+     * MainActivity.traiterIntentEventuel pour la reception du lien et v0.21 dans le CHANGELOG.
      *
-     * NON TESTE avec un vrai lecteur/imprimante (pas de scanner QR ni d'imprimante disponibles
-     * ici) : la densite du QR a cette taille (56pt, ~0.78cm) pour 320 caracteres hexa peut etre
-     * fine a lire pour un appareil photo de telephone selon la qualite d'impression - a verifier
-     * en vrai, et a agrandir dans PlancheEtiquettes si ca scanne mal.
+     * NON TESTE avec une vraie imprimante (aucune disponible ici) : la densite du QR a cette
+     * taille (56pt, ~0.78cm) pour un lien d'environ 330 caracteres peut etre fine a lire pour un
+     * appareil photo de telephone selon la qualite d'impression - a verifier en vrai, et a
+     * agrandir dans PlancheEtiquettes si ca scanne mal.
      *
      * @return false si le QR n'a pas pu etre genere (contenu trop long, erreur zxing) - l'appelant
      *         recupere alors toute la largeur de la cellule pour le texte.

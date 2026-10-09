@@ -39,15 +39,18 @@ son code source la table de correspondance et annote chaque page dans son édite
 
 ## Fonctionnalités
 
-Lecture, copier/partager, export **et import** du dump brut, historique des scans, rapport de
-compatibilité, gestion du NFC désactivé, réglage de la vibration, **impression d'étiquettes**
-(v0.15, grille générique 3×8 par page A4 - voir `PlancheEtiquettes.kt`), exportable en PDF **ou
-imprimable directement via la fenêtre d'impression Android** sur une imprimante Wi-Fi (v0.20 -
-voir `ImpressionPlanche.kt`), **création de tag personnalisé** (v0.17, formulaire complet sans
-passer par un éditeur externe - voir `EncodeurElegoo.kt`), **clonage par lot** (v0.17, plusieurs
-dumps → plusieurs tags à la suite) et **avertissement préventif** si un verrou est détecté avant
-un effacement (v0.17, imparfait - voir le CHANGELOG), **sauvegarde automatique** de chaque dump
-lu, **QR code de reclonage** sur les étiquettes et **mode sombre** (v0.18).
+Lecture, copier/partager, export **et import** du dump brut, historique des scans **filtrable**
+(matière, couleur, code fabricant... - v0.21), rapport de compatibilité, gestion du NFC désactivé,
+réglage de la vibration **et du son** de fin de lecture (bip différent succès/erreur - v0.21),
+**impression d'étiquettes** (v0.15, grille générique 3×8 par page A4 - voir
+`PlancheEtiquettes.kt`), exportable en PDF **ou imprimable directement via la fenêtre
+d'impression Android** sur une imprimante Wi-Fi (v0.20 - voir `ImpressionPlanche.kt`), avec un QR
+de reclonage qui permet aussi de **consulter une bobine sans NFC** en scannant l'étiquette papier
+(v0.21), **création de tag personnalisé** (v0.17, formulaire complet sans passer par un éditeur
+externe - voir `EncodeurElegoo.kt`), **clonage par lot** (v0.17, plusieurs dumps → plusieurs tags
+à la suite) et **avertissement préventif** si un verrou est détecté avant un effacement (v0.17,
+imparfait - voir le CHANGELOG), **sauvegarde automatique** de chaque dump lu et **mode sombre**
+(v0.18).
 
 **Importer un dump pour cloner (v0.7, élargi en v0.9)** : jusqu'à présent le clonage exigeait
 d'avoir la bobine source physiquement en main au moment de l'écriture. Le bouton "Importer un

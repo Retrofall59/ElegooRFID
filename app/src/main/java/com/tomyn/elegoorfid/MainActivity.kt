@@ -21,6 +21,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.animation.AnimationUtils
 import android.widget.Button
+import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -167,10 +168,46 @@ class MainActivity : AppCompatActivity() {
 
     private fun traiterIntentEventuel(intent: android.content.Intent?) {
         if (intent == null) return
+        if (intent.action == Intent.ACTION_VIEW) {
+            traiterLienEtiquette(intent.data)
+            return
+        }
         if (intent.action != NfcAdapter.ACTION_TECH_DISCOVERED) return
         @Suppress("DEPRECATION")
         val tag = intent.getParcelableExtra<Tag>(NfcAdapter.EXTRA_TAG) ?: return
         lireTag(tag)
+    }
+
+    /**
+     * Reception du lien "elegoorfid://dump/<hex>" encode dans le QR des etiquettes (v0.21, voir
+     * PlancheEtiquettes.lienQrPourDump et l'intent-filter dans AndroidManifest.xml) : permet de
+     * consulter une bobine (et de la cloner si besoin) a partir de l'etiquette papier scannee par
+     * n'importe quelle appli de QR, SANS avoir le tag NFC a portee - utile si le tag est
+     * abime/illisible mais l'etiquette existe encore.
+     *
+     * enregistrerHistorique=false : ce n'est pas une vraie lecture NFC, pas d'entree d'historique
+     * ni de sauvegarde automatique pour une simple consultation - par contre dernierDumpBrut est
+     * bien renseigne par afficherResultats, donc "Cloner" fonctionne normalement juste apres.
+     */
+    private fun traiterLienEtiquette(uri: android.net.Uri?) {
+        if (uri == null || uri.scheme != "elegoorfid" || uri.host != "dump") return
+        val hex = uri.lastPathSegment
+        if (hex.isNullOrBlank() || hex.length % 2 != 0 || !hex.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }) {
+            Toast.makeText(this, "Étiquette illisible (lien invalide).", Toast.LENGTH_LONG).show()
+            return
+        }
+        val dump = try {
+            ByteArray(hex.length / 2) { i -> hex.substring(i * 2, i * 2 + 2).toInt(16).toByte() }
+        } catch (e: NumberFormatException) {
+            Toast.makeText(this, "Étiquette illisible (lien invalide).", Toast.LENGTH_LONG).show()
+            return
+        }
+        val info = DecodeurElegoo.decoder(dump)
+        if (info.headerValide != true) {
+            Toast.makeText(this, "Étiquette reconnue mais le contenu ne correspond pas à un dump Elegoo valide.", Toast.LENGTH_LONG).show()
+            return
+        }
+        afficherResultats(info, dump, statutTexte = "Bobine (depuis l'étiquette, sans NFC)", enregistrerHistorique = false)
     }
 
     private fun lireTag(tag: Tag) {
@@ -199,6 +236,7 @@ class MainActivity : AppCompatActivity() {
         if (nfcA == null) {
             txtStatut.text = "Ce tag n'est pas compatible NFC-A"
             dernierScanReussi = false
+            jouerSonResultat(false)
             return
         }
 
@@ -213,6 +251,7 @@ class MainActivity : AppCompatActivity() {
                 txtStatut.text = "Tag lu, mais l'en-tête attendu (0x36) est absent — pas au format Elegoo reconnu, ou doc non conforme à ce tag"
                 dernierScanReussi = false
                 dernierDumpTexte = "--- DUMP BRUT ---\n${formaterDumpHex(dump)}"
+                jouerSonResultat(false)
                 return
             }
 
@@ -220,6 +259,7 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             txtStatut.text = "Erreur de lecture : ${e.message}"
             dernierScanReussi = false
+            jouerSonResultat(false)
         } finally {
             try { nfcA.close() } catch (e: Exception) { /* rien a faire */ }
         }
@@ -794,8 +834,15 @@ class MainActivity : AppCompatActivity() {
         dernierDumpTexte = dernierResume + "\n\n--- DUMP BRUT (pour analyse) ---\n" + formaterDumpHex(dump)
 
         if (GestionnaireParametres.lireVibrationFinLecture(this)) vibrerConfirmation()
+        jouerSonResultat(true)
         if (enregistrerHistorique) {
-            enregistrerDansHistorique(info.codeFabricant ?: "?", info.couleurHex ?: "")
+            enregistrerDansHistorique(
+                info.codeFabricant ?: "?",
+                info.couleurHex ?: "",
+                info.matiereTexte,
+                info.sousTypeTexte,
+                info.poidsGrammes
+            )
             sauvegarderDumpAuto(dernierDumpTexte)
         }
     }
@@ -827,6 +874,29 @@ class MainActivity : AppCompatActivity() {
                 vibrator.vibrate(80)
             }
         } catch (e: Exception) { /* pas grave si la vibration echoue */ }
+    }
+
+    /**
+     * Bip de confirmation en fin de lecture NFC (ajoute en v0.21 a la demande de Tomyn, en plus
+     * de la vibration deja reglable) : un son different succes/erreur, utile pour scanner vite
+     * sans regarder l'ecran a chaque bobine. ToneGenerator plutot qu'un fichier audio : aucune
+     * ressource a embarquer, deux tonalites standard suffisent (ACK = double bip aigu "ok", NACK
+     * = bip grave "erreur").
+     */
+    private fun jouerSonResultat(succes: Boolean) {
+        if (!GestionnaireParametres.lireSonFinLecture(this)) return
+        try {
+            val tonalite = android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 80)
+            val type = if (succes) android.media.ToneGenerator.TONE_PROP_ACK else android.media.ToneGenerator.TONE_PROP_NACK
+            tonalite.startTone(type, 150)
+            // Le son joue de facon asynchrone cote systeme ; on relache apres un court delai
+            // plutot qu'immediatement, sinon le ToneGenerator peut couper le bip avant qu'il ait
+            // eu le temps de sortir.
+            Thread {
+                try { Thread.sleep(200) } catch (e: InterruptedException) { /* rien a faire */ }
+                tonalite.release()
+            }.start()
+        } catch (e: Exception) { /* pas grave si le son echoue (pas de haut-parleur, etc.) */ }
     }
 
     private fun copierResume() {
@@ -1075,15 +1145,75 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun enregistrerDansHistorique(codeFabricant: String, couleurHex: String) {
+    /**
+     * @param matiereTexte @param sousTypeTexte @param poidsGrammes ajoutes en v0.21 (en plus de
+     * codeFabricant/couleurHex deja presents) pour permettre un filtre utile dans l'historique
+     * (voir afficherHistorique) - avant ca, impossible de retrouver "les bobines PETG" ou "les
+     * bobines de 1kg" sans rouvrir chaque ligne a l'oeil.
+     */
+    private fun enregistrerDansHistorique(
+        codeFabricant: String,
+        couleurHex: String,
+        matiereTexte: String?,
+        sousTypeTexte: String?,
+        poidsGrammes: Int?
+    ) {
         try {
             val fichier = File(getExternalFilesDir(null), "historique_scans.csv")
-            val ligne = "${SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE).format(Date())};$codeFabricant;$couleurHex\n"
+            val ligne = listOf(
+                SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE).format(Date()),
+                codeFabricant,
+                couleurHex,
+                matiereTexte ?: "",
+                sousTypeTexte ?: "",
+                poidsGrammes?.toString() ?: ""
+            ).joinToString(";") + "\n"
             fichier.appendText(ligne)
         } catch (e: Exception) { /* pas grave si l'ecriture de l'historique echoue */ }
     }
 
-    private fun afficherHistorique() {
+    /** Une ligne de l'historique, parsee et prete a afficher ou a filtrer. Les lignes ecrites par
+     * une version anterieure a l'ajout du filtre (v0.21 et avant) n'ont que 3 champs - matiere,
+     * sousType et poids restent alors a null, pas de plantage (voir getOrNull ci-dessous). */
+    private data class LigneHistorique(
+        val date: String,
+        val codeFabricant: String,
+        val couleurHex: String,
+        val matiereTexte: String?,
+        val sousTypeTexte: String?,
+        val poidsGrammes: String?,
+        val texteBrut: String
+    )
+
+    private fun parserLigneHistorique(ligne: String): LigneHistorique? {
+        val parts = ligne.split(";")
+        if (parts.size < 3) return null
+        return LigneHistorique(
+            date = parts[0],
+            codeFabricant = parts[1],
+            couleurHex = parts[2],
+            matiereTexte = parts.getOrNull(3)?.ifBlank { null },
+            sousTypeTexte = parts.getOrNull(4)?.ifBlank { null },
+            poidsGrammes = parts.getOrNull(5)?.ifBlank { null },
+            texteBrut = ligne
+        )
+    }
+
+    private fun texteAfficheLigne(l: LigneHistorique): String {
+        val titre = listOfNotNull(l.matiereTexte, l.sousTypeTexte).joinToString(" ").ifBlank { "Matière inconnue" }
+        val details = listOfNotNull(
+            "#${l.couleurHex}".takeIf { l.couleurHex.isNotBlank() },
+            l.poidsGrammes?.let { "${it}g" }
+        ).joinToString(" · ")
+        return "${l.date}\n$titre" + (if (details.isNotBlank()) " ($details)" else "")
+    }
+
+    /**
+     * @param filtre si non vide, ne garde que les lignes dont un champ (matiere, sous-type,
+     * couleur, code fabricant, date) contient ce texte (insensible a la casse/accents simples) -
+     * ajoute en v0.21 a la demande de Tomyn, l'historique pouvant grossir avec le temps.
+     */
+    private fun afficherHistorique(filtre: String? = null) {
         try {
             val fichier = File(getExternalFilesDir(null), "historique_scans.csv")
             if (!fichier.exists() || fichier.readText().isBlank()) {
@@ -1094,16 +1224,39 @@ class MainActivity : AppCompatActivity() {
                     .show()
                 return
             }
-            val lignes = fichier.readLines().reversed()
-            val texteAffiche = lignes.joinToString("\n\n") { ligne ->
-                val parts = ligne.split(";")
-                if (parts.size >= 3) "${parts[0]}\n${parts[2]}" else ligne
+            val toutesLesLignes = fichier.readLines().reversed().mapNotNull { parserLigneHistorique(it) }
+            val filtreNettoye = filtre?.trim()?.lowercase(Locale.FRANCE)
+            val lignes = if (filtreNettoye.isNullOrBlank()) {
+                toutesLesLignes
+            } else {
+                toutesLesLignes.filter { it.texteBrut.lowercase(Locale.FRANCE).contains(filtreNettoye) }
             }
+
+            if (lignes.isEmpty()) {
+                AlertDialog.Builder(this)
+                    .setTitle("Historique des scans")
+                    .setMessage("Aucun résultat pour « $filtre » sur ${toutesLesLignes.size} scan(s) enregistré(s).")
+                    .setPositiveButton("Nouveau filtre") { _, _ -> demanderFiltreHistorique() }
+                    .setNegativeButton("Fermer", null)
+                    .show()
+                return
+            }
+
+            val texteAffiche = lignes.joinToString("\n\n") { texteAfficheLigne(it) }
+            val titre = if (filtreNettoye.isNullOrBlank()) {
+                "Historique des scans (${lignes.size})"
+            } else {
+                "Historique des scans (${lignes.size}/${toutesLesLignes.size}, filtré)"
+            }
+            // setItems aurait remplace le message (voir imprimerPlanche/genererPdfPlanche pour la
+            // meme limite d'AlertDialog) : ici on garde setMessage pour le texte des scans et on
+            // se limite donc aux 3 emplacements de boutons existants - "Filtrer" remplace "Fermer"
+            // (fermer la boite se fait en tapant en dehors, comportement standard du dialogue).
             AlertDialog.Builder(this)
-                .setTitle("Historique des scans (${lignes.size})")
+                .setTitle(titre)
                 .setMessage(texteAffiche)
-                .setPositiveButton("Fermer", null)
-                .setNeutralButton("Exporter") { _, _ -> exporterVers("historique_scans_elegoo.csv", fichier.readText(), "text/csv") }
+                .setPositiveButton("Filtrer") { _, _ -> demanderFiltreHistorique() }
+                .setNeutralButton("Exporter tout") { _, _ -> exporterVers("historique_scans_elegoo.csv", fichier.readText(), "text/csv") }
                 .setNegativeButton("Vider l'historique") { _, _ ->
                     fichier.delete()
                     Toast.makeText(this, "Historique effacé.", Toast.LENGTH_SHORT).show()
@@ -1112,6 +1265,18 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             Toast.makeText(this, "Erreur lecture historique : ${e.message}", Toast.LENGTH_LONG).show()
         }
+    }
+
+    private fun demanderFiltreHistorique() {
+        val champ = EditText(this).apply {
+            hint = "matière, couleur, code fabricant..."
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Filtrer l'historique")
+            .setView(champ)
+            .setPositiveButton("Filtrer") { _, _ -> afficherHistorique(champ.text.toString()) }
+            .setNegativeButton("Tout afficher") { _, _ -> afficherHistorique() }
+            .show()
     }
 
     // ============================== PLANCHE D'ETIQUETTES ==============================

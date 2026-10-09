@@ -1,5 +1,79 @@
 # Changelog
 
+## v0.22-fix-impression (build 22)
+
+**Correctif d'un vrai bug de compilation signalé par Damdam2959** (build GitHub Actions, v0.20) :
+
+```
+e: ImpressionPlanche.kt:29:1 Class 'ImpressionPlanche' is not abstract and does not implement
+abstract base class member public abstract fun onWrite(... destination: ParcelFileDescriptor! ...)
+e: ImpressionPlanche.kt:54:5 'onWrite' overrides nothing
+```
+
+**Cause, cash et franc** : en écrivant `ImpressionPlanche.kt` (v0.20, impression directe), j'ai
+utilisé `FileDescriptor` pour le paramètre `destination` de `onWrite`, en me basant sur ma mémoire
+de l'API Android plutôt qu'en la vérifiant - le vrai type attendu par `PrintDocumentAdapter` est
+`ParcelFileDescriptor`. Ma vérification par `kotlinc` ne l'a pas vu : j'avais écrit le stub
+`PrintDocumentAdapter` ET l'implémentation avec la même erreur, donc ils correspondaient entre eux
+sans jamais être comparés à la vraie signature Android. C'est une limite structurelle de cette
+méthode de vérification (compiler contre des stubs écrits à la main plutôt que le vrai SDK
+Android, qui n'est pas installé ici) : elle ne peut pas rattraper une erreur que je commets de
+façon cohérente des deux côtés.
+
+**Corrigé** : `onWrite` prend maintenant un `ParcelFileDescriptor`, et le flux d'écriture passe
+par `ParcelFileDescriptor.AutoCloseOutputStream` (classe réelle prévue pour ça, qui ferme aussi le
+descripteur). Le stub `PrintDocumentAdapter` a été corrigé pour coller à la vraie signature, et
+les autres méthodes de `android.print.*` utilisées (`onLayout`, `PrintManager.print`,
+`PrintDocumentInfo.Builder`, `PageRange`) ont été recomparées une à une à l'API réelle plutôt que
+de refaire confiance à mes propres stubs.
+
+Revérifié par compilation réelle (zéro erreur après correction), par les 21 fichiers XML (aucun
+touché cette fois, toujours zéro erreur) et par les tests unitaires du décodeur (zéro régression).
+**Point qui reste hors de portée d'ici** : un vrai test d'impression sur une imprimante Wi-Fi,
+faute de matériel disponible - la logique PDF elle-même (`PlancheEtiquettes.genererPdf`) est
+inchangée et déjà utilisée sans souci par l'export PDF classique.
+
+## v0.21-filtre-qr-son (build 21)
+
+Trois améliorations proposées par Claude, validées par Damdam2959 (3-4-5 de la liste) :
+
+**1. Filtre dans l'historique des scans** (`MainActivity.afficherHistorique`/`demanderFiltreHistorique`) :
+le bouton "Filtrer" ouvre un champ de recherche et ne garde que les scans dont un champ (matière,
+sous-type, couleur, code fabricant, date) contient le texte saisi. L'historique enregistre
+maintenant aussi la matière, le sous-type et le poids (avant : seulement date, code fabricant et
+couleur) - sans ça il n'y avait rien de pertinent à filtrer. Les lignes écrites par une version
+antérieure (3 champs) restent lisibles, juste sans ces nouveaux champs (`parserLigneHistorique`,
+compatibilité par `getOrNull`).
+
+**2. QR des étiquettes → consultation sans NFC** (`PlancheEtiquettes.lienQrPourDump`,
+`MainActivity.traiterLienEtiquette`, intent-filter dans `AndroidManifest.xml`) : le QR codait
+déjà le dump en hexa depuis la v0.18, mais rien ne consommait ce texte scanné - cette partie de la
+fonctionnalité n'avait jamais été câblée jusqu'au bout (signalé "non testé" dans le CHANGELOG
+v0.18, en réalité incomplet). Corrigé en encodant un vrai lien `elegoorfid://dump/<hex>` : une
+appli de scan QR (ou le détecteur QR intégré à la plupart des appareils photo Android) propose
+directement "Ouvrir avec ElegooRFID", qui affiche alors la bobine exactement comme après une
+lecture NFC - utile si le tag est abîmé/illisible mais l'étiquette papier existe encore. Le bouton
+"Cloner" fonctionne ensuite normalement (le dump est bien chargé), ce qui couvre aussi l'usage
+"recloner sans retrouver le fichier d'origine" visé dès la v0.18. Pas d'entrée d'historique ni de
+sauvegarde automatique pour une simple consultation (`enregistrerHistorique=false`) - seule une
+vraie lecture NFC compte comme un scan.
+
+**3. Son de fin de lecture** (`MainActivity.jouerSonResultat`, nouveau réglage "Son en fin de
+lecture" dans les paramètres, activé par défaut) : un bip différent succès/erreur via
+`ToneGenerator` (aucun fichier audio à embarquer), pour scanner sans avoir à regarder l'écran à
+chaque bobine. Scopé à la lecture NFC elle-même (tag non compatible, en-tête absent, erreur de
+lecture, et le succès dans `afficherResultats`) - pas au clonage/effacement, qui ont déjà leurs
+propres retours.
+
+Vérifié par compilation réelle (kotlinc, nouveaux stubs `android.net.Uri`/`android.media.*`/
+`AlertDialog.setView`/`setItems`/`EditText.hint`), par les 21 fichiers XML passés dans un vrai
+parseur XML (voir v0.19 - manifest et layout paramètres modifiés cette fois, toujours zéro
+erreur), par un aller-retour hex→URI→hex hors appli confirmant que l'encodage du lien QR ne perd
+aucun octet, et par les tests unitaires du décodeur (zéro régression, aucune logique de
+décodage/encodage touchée). **Non testé en conditions réelles** : qu'un vrai scanner QR/appareil
+photo propose bien "Ouvrir avec ElegooRFID" pour ce lien (dépend du détecteur QR du téléphone, pas
+de cette appli), et le bip du `ToneGenerator` sur un vrai haut-parleur.
+
 ## v0.20-impression-directe (build 20)
 
 **Impression directe demandée par Damdam2959** : générer le PDF puis devoir aller le chercher
