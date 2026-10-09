@@ -228,6 +228,19 @@
             android:textAllCaps="false"
             android:textSize="13sp" />
 
+        <!-- Scan QR via la camera (v0.29) : alternative au NFC pour consulter une bobine a partir
+             de l'etiquette papier (voir ScanQrActivity.kt et PlancheEtiquettes.lienQrPourDump). -->
+        <Button
+            android:id="@+id/btnScannerQr"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/fond_bouton_secondaire"
+            android:text="Scanner le QR d'une étiquette"
+            android:textColor="@color/texte_principal"
+            android:textAllCaps="false"
+            android:textSize="13sp" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

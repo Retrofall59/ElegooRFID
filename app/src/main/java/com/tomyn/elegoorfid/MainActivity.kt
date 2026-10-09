@@ -134,6 +134,9 @@ class MainActivity : AppCompatActivity() {
             // long "Copier" -> "copier le dump" ajoute en v0.26 - voir collerDumpDepuisPressePapier().
             setOnLongClickListener { collerDumpDepuisPressePapier(); true }
         }
+        findViewById<Button>(R.id.btnScannerQr).setOnClickListener {
+            startActivityForResult(Intent(this, ScanQrActivity::class.java), CODE_SCAN_QR)
+        }
         findViewById<Button>(R.id.btnCopier).apply {
             setOnClickListener { copierResume() }
             // Appui long = copier le dump brut en hexa (v0.26) plutot que le resume - voir
@@ -1287,6 +1290,11 @@ class MainActivity : AppCompatActivity() {
                     demarrerLotAvecValides(valides)
                 }
             }
+            CODE_SCAN_QR -> {
+                if (resultCode != RESULT_OK) return
+                val lien = data?.getStringExtra(ScanQrActivity.EXTRA_LIEN)
+                traiterLienEtiquette(lien?.let { android.net.Uri.parse(it) })
+            }
             CODE_EXPORT_PLANCHE -> {
                 val uri = data?.data
                 if (resultCode != RESULT_OK || uri == null) return
@@ -1785,6 +1793,7 @@ class MainActivity : AppCompatActivity() {
         const val CODE_EXPORT_PLANCHE = 4713
         const val CODE_CREATION = 4714
         const val CODE_IMPORT_LOT = 4715
+        const val CODE_SCAN_QR = 4716
         // Affichage de l'historique limite aux N scans les plus recents (v0.28, voir
         // afficherHistorique) - "Exporter/Partager" reste le moyen de tout recuperer au-dela.
         const val LIMITE_AFFICHAGE_HISTORIQUE = 50

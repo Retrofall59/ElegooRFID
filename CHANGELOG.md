@@ -1,5 +1,41 @@
 # Changelog
 
+## v0.29-scan-qr-camera (build 29)
+
+Scan du QR des étiquettes directement depuis l'appareil photo de l'appli (`ScanQrActivity.kt`,
+nouveau bouton "Scanner le QR d'une étiquette") - proposée par Claude, validée par Damdam2959.
+Jusqu'ici, le lien `elegoorfid://dump/<hex>` encodé dans le QR des étiquettes (v0.21, voir
+`PlancheEtiquettes.lienQrPourDump`) ne pouvait être ouvert que via une appli de scan QR externe (ou
+le détecteur intégré à l'appareil photo de certains téléphones). CameraX pour la prévisualisation
+et l'analyse d'image, ZXing pour le décodage - ZXing est déjà une dépendance du projet depuis la
+v0.18 mais uniquement pour l'**encodage** du QR (`QRCodeWriter`) ; cette version réutilise la même
+bibliothèque pour le **décodage** (`MultiFormatReader` + `PlanarYUVLuminanceSource`), aucune
+dépendance supplémentaire pour cette partie. Permission caméra demandée à l'exécution au premier
+lancement (permission "dangereuse" depuis Android 6, contrairement à NFC/VIBRATE qui sont
+accordées automatiquement à l'installation) ; `android.hardware.camera` déclaré non obligatoire
+(`required="false"`) pour que l'appli reste installable sans caméra, le NFC restant le moyen
+principal.
+
+**Mise en garde cash et franc, plus franche que d'habitude sur celle-ci** : CameraX est une API
+nettement plus large et plus complexe que tout ce qui a été stubbé jusqu'ici dans ce projet
+(`ProcessCameraProvider`, `ImageAnalysis.Analyzer`, `ImageProxy`, les génériques de
+`ListenableFuture`...). Trois vraies erreurs de compilation réelles ont déjà été ratées cette
+session par la vérification `kotlinc` contre des stubs écrits à la main
+(`ParcelFileDescriptor` en v0.22, `EditText.text`/`Editable` en v0.25, `AlertDialog`
+`setMessage`+`setItems` en v0.23) précisément quand le stub et le code réel partageaient la même
+hypothèse fausse sur une API Android. Le risque que ça se reproduise ici est plus élevé que pour
+les versions précédentes, simplement parce que la surface stubbée d'un coup (une dizaine de
+nouvelles classes CameraX/Guava/ZXing) est bien plus grande. **Si la compilation GitHub Actions
+échoue sur cette version, commence par regarder `ScanQrActivity.kt` et les imports
+`androidx.camera.*`/`com.google.zxing.*` en premier.**
+
+Vérifié par compilation réelle (zéro erreur contre les nouveaux stubs - voir la mise en garde
+ci-dessus sur leur fiabilité), par les 23 fichiers XML passés dans un vrai parseur XML (dont le
+nouveau `activity_scan_qr.xml`), et par les tests unitaires du décodeur (zéro régression, aucun
+rapport avec ce changement). **Non testé en conditions réelles** : absolument tout le
+fonctionnement de cet écran (démarrage de la caméra, cadrage, decodage effectif d'un QR, fermeture
+propre de la caméra) - c'est la fonctionnalité la moins éprouvée livrée cette session.
+
 ## v0.28-limite-historique-partage-rapport (build 28)
 
 Deux améliorations proposées par Claude, validées par Damdam2959 ("1-2") :

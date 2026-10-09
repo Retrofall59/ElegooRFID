@@ -53,7 +53,7 @@ Paramètres - 3×8 par page A4 par défaut - v0.23, voir `PlancheEtiquettes.kt`)
 **ou imprimable/partageable directement** (fenêtre d'impression Android sur une imprimante Wi-Fi -
 v0.20, ou envoi du PDF par mail/Drive/etc. - v0.24, voir `ImpressionPlanche.kt`), avec un QR de
 reclonage qui permet aussi de **consulter une bobine sans NFC** en scannant l'étiquette papier
-(v0.21) et un **badge d'origine** sur les tags créés à la main ou simplement consultés via QR,
+(v0.21, **scanné directement depuis la caméra de l'appli, sans appli externe - v0.29**) et un **badge d'origine** sur les tags créés à la main ou simplement consultés via QR,
 pour ne pas les confondre avec une vraie bobine scannée (v0.24), **création de tag personnalisé**
 (v0.17, formulaire complet sans passer par un éditeur externe - voir `EncodeurElegoo.kt`),
 **clonage par lot** (v0.17, plusieurs dumps → plusieurs tags à la suite, résultat **exportable en
