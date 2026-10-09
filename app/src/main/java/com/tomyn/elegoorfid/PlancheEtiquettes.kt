@@ -1,6 +1,7 @@
 package com.tomyn.elegoorfid
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -327,31 +328,38 @@ object PlancheEtiquettes {
     }
 
     /**
-     * Dessine un QR code encodant un lien (voir lienQrPourDump) directement sur le Canvas, module
-     * par module (pas de Bitmap intermediaire) - permet de rescanner l'etiquette papier plus tard
-     * pour consulter les infos de la bobine ou la recloner, SANS le tag NFC a portee (utile si le
-     * tag est abime/illisible mais l'etiquette papier existe encore) - voir
-     * MainActivity.traiterIntentEventuel pour la reception du lien et v0.21 dans le CHANGELOG.
+     * Dessine un QR code encodant un lien (voir lienQrPourDump) sur le Canvas - permet de
+     * rescanner l'etiquette papier plus tard pour consulter les infos de la bobine ou la
+     * recloner, SANS le tag NFC a portee (utile si le tag est abime/illisible mais l'etiquette
+     * papier existe encore) - voir MainActivity.traiterIntentEventuel pour la reception du lien
+     * et v0.21 dans le CHANGELOG.
      *
-     * Corrige le 09/10/2026 : Damdam2959 a confirme sur une vraie impression que le QR ne
-     * scannait pas du tout avec l'appareil photo. Deux causes reelles, cumulatives :
-     * 1. `EncodeHintType.MARGIN to 0` supprimait la "quiet zone" (marge blanche) autour du QR que
-     *    la norme exige pour qu'un detecteur puisse l'accrocher - sans elle, beaucoup de lecteurs
-     *    (dont le detecteur QR d'un appareil photo de telephone) ne reconnaissent meme pas qu'il y
-     *    a un QR a cet endroit. Retire : zxing applique maintenant sa marge standard.
-     * 2. Le lien encode (~330 caracteres, dont le dump complet en hexa) force l'encodage en mode
-     *    "byte" (le moins dense) a cause du "elegoorfid://" en minuscules - a cette taille, les
-     *    modules devenaient trop petits pour rester nets a l'impression (environ 0.3mm avec
-     *    l'ancienne taille de 56pt). Le schema/hote du lien doivent rester en minuscules exactes
-     *    (`android:scheme="elegoorfid"`/`android:host="dump"` dans le manifeste, compares de
-     *    maniere sensible a la casse par le systeme pour proposer "Ouvrir avec ElegooRFID") - donc
-     *    pas d'optimisation possible sur l'encodage ici. A la place : le QR imprime est agrandi
-     *    (56pt -> 80pt, voir dessinerEtiquette) pour des modules nettement plus gros a densite
-     *    egale.
+     * Corrige le 10/10/2026 (suite au retour de Damdam2959 sur la 0.33 PUIS la 0.34) : le QR
+     * imprime ne scannait pas du tout, ni avec le scanner integre de l'appli, ni avec un lecteur
+     * externe - meme apres l'avoir agrandi et lui avoir redonne sa marge standard en v0.34. Un
+     * echec aussi total (meme un lecteur externe, meme apres agrandissement) ne s'explique pas
+     * par la seule taille/densite : la cause la plus probable est la methode de dessin elle-meme,
+     * en place depuis l'introduction du QR en v0.18 et jamais verifiee sur un vrai tirage papier
+     * jusqu'a cette session. L'ancienne version dessinait un rectangle vectoriel independant PAR
+     * MODULE (plusieurs centaines pour un QR de cette densite) - a la taille d'impression reelle,
+     * chaque rectangle est arrondi au pixel d'impression independamment des autres lors du
+     * rasterisage par le pilote d'impression, ce qui peut laisser des liserets blancs entre
+     * modules cote a cote ou au contraire en fusionner certains, deformant le motif au point de le
+     * rendre illisible - exactement le genre de defaut qu'aucune verification par compilation
+     * (stubs) ne peut detecter, puisqu'il ne se manifeste qu'au rasterisage reel.
      *
-     * Ces deux corrections devraient resoudre le probleme, mais restent NON reverifiees avec une
-     * vraie impression/scan (pas d'imprimante ni de tag disponibles ici) - a confirmer par
-     * Damdam2959 sur sa prochaine planche imprimee.
+     * Remplace par un rendu via un Bitmap intermediaire : chaque pixel du bitmap correspond
+     * exactement a un module (aucun rectangle independant a arrondir), puis CE bitmap est dessine
+     * en une seule fois, mis a l'echelle vers la taille d'impression voulue
+     * (`Canvas.drawBitmap`) - `isFilterBitmap = false` pour un agrandissement "au plus proche"
+     * plutot que flou/interpole, qui garde des aretes nettes entre modules noirs et blancs
+     * (important pour qu'un detecteur distingue bien chaque module).
+     *
+     * Toujours NON reverifie avec une vraie impression/scan (pas d'imprimante ni de tag
+     * disponibles ici) - a confirmer par Damdam2959 sur sa prochaine planche imprimee. Si ca
+     * echoue encore malgre ce changement, le probleme n'est probablement plus dans le dessin du
+     * QR lui-meme mais dans son contenu/sa densite (voir le commentaire de lienQrPourDump) - a
+     * creuser dans cet ordre.
      *
      * @return false si le QR n'a pas pu etre genere (contenu trop long, erreur zxing) - l'appelant
      *         recupere alors toute la largeur de la cellule pour le texte.
@@ -362,15 +370,14 @@ object PlancheEtiquettes {
                 EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.L
             )
             val matrice = QRCodeWriter().encode(contenu, BarcodeFormat.QR_CODE, 0, 0, hints)
-            val module = taille / matrice.width
-            val peintureQr = Paint().apply { style = Paint.Style.FILL; color = Color.BLACK }
+            val bitmap = Bitmap.createBitmap(matrice.width, matrice.height, Bitmap.Config.ARGB_8888)
             for (ty in 0 until matrice.height) {
                 for (tx in 0 until matrice.width) {
-                    if (matrice.get(tx, ty)) {
-                        canvas.drawRect(x + tx * module, y + ty * module, x + (tx + 1) * module, y + (ty + 1) * module, peintureQr)
-                    }
+                    bitmap.setPixel(tx, ty, if (matrice.get(tx, ty)) Color.BLACK else Color.WHITE)
                 }
             }
+            val peintureQr = Paint().apply { isFilterBitmap = false }
+            canvas.drawBitmap(bitmap, null, RectF(x, y, x + taille, y + taille), peintureQr)
             true
         } catch (ex: WriterException) {
             false

@@ -1,5 +1,40 @@
 # Changelog
 
+## v0.35-qr-rendu-bitmap (build 35)
+
+Suite au retour de Damdam2959 sur la v0.34 : après réimpression avec le QR agrandi et sa marge
+corrigée, **toujours rien** - ni le scanner intégré de l'appli, ni un lecteur QR externe
+n'arrivaient à le lire. Un échec aussi complet (même un lecteur externe, même agrandi) ne
+s'explique pas par la seule taille/densité du QR - la vraie cause est très probablement la méthode
+de dessin elle-même (`PlancheEtiquettes.dessinerQr`), en place depuis l'introduction du QR en
+v0.18 et jamais vérifiée sur un vrai tirage papier avant cette session (flaggé "non testé" dans
+chaque CHANGELOG depuis).
+
+**Cause probable** : l'ancienne version dessinait un rectangle vectoriel indépendant PAR MODULE
+(plusieurs centaines pour un QR de cette densité). À la taille d'impression réelle, chaque
+rectangle est arrondi au pixel d'impression indépendamment des autres lors du rasterisage par le
+pilote d'impression - ce qui peut laisser des liserets blancs entre modules côte à côte, ou au
+contraire en fusionner certains, déformant le motif au point de le rendre illisible. Exactement le
+genre de défaut qu'aucune vérification par compilation (stubs) ne peut détecter, puisqu'il ne se
+manifeste qu'au rasterisage réel - confirmé indirectement en testant le contenu exact du lien
+(longueur, version QR requise) avec une bibliothèque QR de référence (Python `qrcode` + décodage
+`pyzbar`) : le contenu s'encode et se décode sans problème dans l'absolu, donc le souci n'est pas
+le texte encodé ni sa longueur.
+
+**Corrigé** : le QR est maintenant dessiné via un `Bitmap` intermédiaire - chaque pixel du bitmap
+correspond exactement à un module (aucun rectangle indépendant à arrondir), puis ce bitmap est
+dessiné en une seule fois à la taille d'impression voulue (`Canvas.drawBitmap`,
+`isFilterBitmap = false` pour un agrandissement net plutôt que flou, important pour qu'un
+détecteur distingue bien chaque module).
+
+Vérifié par compilation réelle (zéro erreur ; nouveaux stubs `Bitmap`/`Rect`/`Canvas.drawBitmap`/
+`Paint.isFilterBitmap`), par les 23 fichiers XML passés dans un vrai parseur XML, et par les trois
+suites de tests unitaires existantes (zéro régression, aucune n'exerce le dessin PDF lui-même).
+**Toujours pas vérifié avec une vraie impression/scan** (pas d'imprimante ni de tag disponibles
+ici) - si ça échoue encore après ce changement, le problème ne sera probablement plus dans le
+dessin du QR lui-même mais dans son contenu/sa densité, à creuser dans cet ordre à partir de la
+prochaine réimpression de Damdam2959.
+
 ## v0.34-fix-qr-etiquette (build 34)
 
 Deux demandes de Damdam2959 après avoir testé la v0.33 avec une vraie impression :
