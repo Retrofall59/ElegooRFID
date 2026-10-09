@@ -43,8 +43,9 @@ Lecture (écran maintenu allumé pendant le scan - v0.23), copier/partager, **co
 hexadécimal séparément (appui long sur "Copier") - v0.26**, export **et import** du dump brut
 (en-tête vérifié avant clonage, avec avertissement si absent - v0.23, **ou collé directement
 depuis le presse-papier par appui long sur "Importer" - v0.27**), historique des scans
-**filtrable** (matière, couleur, code fabricant... - v0.21, **ou par plage de dates - v0.27**) et
-**partageable directement par mail/Drive - v0.26**, rapport de compatibilité, gestion du NFC
+**filtrable** (matière, couleur, code fabricant... - v0.21, **ou par plage de dates - v0.27**,
+**affichage limité aux 50 plus récents - v0.28**) et **partageable directement par mail/Drive -
+v0.26**, rapport de compatibilité **partageable directement (appui long) - v0.28**, gestion du NFC
 désactivé, réglage de la vibration **et du son** de fin de lecture (bip **et vibration** différents
 succès/erreur - v0.21, vibration d'échec ajoutée en v0.26), **sauvegarde/restauration des réglages
 en un fichier - v0.27**, **impression d'étiquettes** (v0.15, grille **réglable** dans les

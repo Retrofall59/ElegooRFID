@@ -142,7 +142,13 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<Button>(R.id.btnPartager).setOnClickListener { partagerResume() }
         findViewById<Button>(R.id.btnHistorique).setOnClickListener { afficherHistorique() }
-        findViewById<Button>(R.id.btnRapportCompat).setOnClickListener { copierRapportCompatibilite() }
+        findViewById<Button>(R.id.btnRapportCompat).apply {
+            setOnClickListener { copierRapportCompatibilite() }
+            // Appui long = partager directement (v0.28), meme principe que les appuis longs
+            // "Copier" -> dump (v0.26) et "Importer" -> coller (v0.27) : pas de bouton
+            // supplementaire pour un ecran deja charge.
+            setOnLongClickListener { partagerRapportCompatibilite(); true }
+        }
         findViewById<ImageButton>(R.id.btnParametres).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
@@ -1416,11 +1422,20 @@ class MainActivity : AppCompatActivity() {
                 return
             }
 
-            val texteAffiche = lignes.joinToString("\n\n") { texteAfficheLigne(it) }
+            // Affichage limite aux scans les plus recents (ajoute en v0.28 - sans ca, un
+            // historique qui grossit avec le temps finit dans un seul setMessage() gigantesque,
+            // illisible et potentiellement lourd a afficher). "lignes" est deja du plus recent au
+            // plus ancien (voir "reversed()" plus haut), donc take() garde bien les plus recents.
+            val lignesAffichees = lignes.take(LIMITE_AFFICHAGE_HISTORIQUE)
+            val texteAffiche = lignesAffichees.joinToString("\n\n") { texteAfficheLigne(it) } +
+                if (lignes.size > LIMITE_AFFICHAGE_HISTORIQUE) {
+                    "\n\n— ${lignes.size - LIMITE_AFFICHAGE_HISTORIQUE} scan(s) plus ancien(s) non affiché(s) : affine ton filtre pour les retrouver, ou utilise \"Exporter/Partager\" pour tout récupérer. —"
+                } else ""
+            val compteurAffiche = if (lignesAffichees.size < lignes.size) "${lignesAffichees.size}/${lignes.size}" else "${lignes.size}"
             val titre = if (descriptionFiltre == null) {
-                "Historique des scans (${lignes.size})"
+                "Historique des scans ($compteurAffiche)"
             } else {
-                "Historique des scans (${lignes.size}/${toutesLesLignes.size}, filtré)"
+                "Historique des scans ($compteurAffiche, filtré sur ${toutesLesLignes.size})"
             }
             // setItems aurait remplace le message (voir imprimerPlanche/genererPdfPlanche pour la
             // meme limite d'AlertDialog) : ici on garde setMessage pour le texte des scans et on
@@ -1703,6 +1718,20 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "Rapport copié : colle-le sur le forum.", Toast.LENGTH_SHORT).show()
     }
 
+    /**
+     * Partage direct du rapport de compatibilite (ajoute en v0.28 a la demande de Tomyn) : jusque
+     * la, seul le copier-coller manuel etait possible. Accessible par un appui long sur le bouton
+     * (plutot qu'un bouton supplementaire) - meme texte brut que copierRapportCompatibilite(),
+     * juste un autre moyen de le faire sortir de l'appli.
+     */
+    private fun partagerRapportCompatibilite() {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, construireRapportCompatibilite())
+        }
+        startActivity(Intent.createChooser(intent, "Partager le rapport de compatibilité"))
+    }
+
     private fun ouvrirReglagesNfc() {
         try {
             startActivity(Intent(Settings.ACTION_NFC_SETTINGS))
@@ -1756,5 +1785,8 @@ class MainActivity : AppCompatActivity() {
         const val CODE_EXPORT_PLANCHE = 4713
         const val CODE_CREATION = 4714
         const val CODE_IMPORT_LOT = 4715
+        // Affichage de l'historique limite aux N scans les plus recents (v0.28, voir
+        // afficherHistorique) - "Exporter/Partager" reste le moyen de tout recuperer au-dela.
+        const val LIMITE_AFFICHAGE_HISTORIQUE = 50
     }
 }

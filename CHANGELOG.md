@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.28-limite-historique-partage-rapport (build 28)
+
+Deux améliorations proposées par Claude, validées par Damdam2959 ("1-2") :
+
+**1. Affichage de l'historique limité aux 50 scans les plus récents** (`MainActivity.
+afficherHistorique`, `LIMITE_AFFICHAGE_HISTORIQUE`) : jusqu'ici, tout l'historique (filtré ou pas)
+partait dans un seul `setMessage()` sans aucune limite - avec un usage intensif, ça finirait tôt
+ou tard par un dialogue illisible, voire lourd à afficher. Recommandation faite cash et franc
+plutôt qu'attendue : c'est un vrai problème de robustesse, pas un gadget. Au-delà de 50, une note
+indique combien de scans plus anciens ne sont pas affichés et renvoie vers "Exporter/Partager"
+(v0.26) pour tout récupérer, ou vers les filtres (texte v0.21, date v0.27) pour les retrouver.
+
+**2. Partager directement le rapport de compatibilité** (`MainActivity.
+partagerRapportCompatibilite`, appui long sur "Copier le rapport de compatibilité") : jusqu'ici,
+seul le copier-coller manuel (`copierRapportCompatibilite`, bouton existant) était possible. Même
+principe que les autres appuis longs déjà en place (copier le dump en v0.26, coller un dump en
+v0.27) plutôt qu'un bouton supplémentaire.
+
+Vérifié par compilation réelle (zéro erreur, aucun nouveau stub nécessaire), par les 22 fichiers
+XML passés dans un vrai parseur XML, et par les tests unitaires du décodeur (zéro régression,
+aucun rapport avec ces deux changements). **Non testé en conditions réelles** : le rendu visuel du
+dialogue d'historique tronqué (coupure propre, pas de texte coupé en plein milieu d'une ligne), et
+le sélecteur de partage pour le rapport de compatibilité.
+
 ## v0.27-backup-reglages-coller-dump-filtre-date (build 27)
 
 Trois améliorations proposées par Claude, validées par Damdam2959 ("ok pour les trois") :
