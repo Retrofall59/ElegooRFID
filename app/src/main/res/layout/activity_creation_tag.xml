@@ -43,7 +43,7 @@
             android:layout_marginBottom="14dp"
             android:background="@drawable/fond_carte"
             android:padding="10dp"
-            android:text="Remplis les champs ci-dessous, puis appuie sur \"Créer le tag\" - le résultat s'affiche comme après une lecture normale, prêt à cloner sur une bobine vierge."
+            android:text="Remplis les champs ci-dessous, puis appuie sur &quot;Créer le tag&quot; - le résultat s'affiche comme après une lecture normale, prêt à cloner sur une bobine vierge."
             android:textColor="@color/texte_secondaire"
             android:textSize="12sp" />
 

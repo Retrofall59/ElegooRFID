@@ -792,7 +792,27 @@ class MainActivity : AppCompatActivity() {
         dernierDumpTexte = dernierResume + "\n\n--- DUMP BRUT (pour analyse) ---\n" + formaterDumpHex(dump)
 
         if (GestionnaireParametres.lireVibrationFinLecture(this)) vibrerConfirmation()
-        if (enregistrerHistorique) enregistrerDansHistorique(info.codeFabricant ?: "?", info.couleurHex ?: "")
+        if (enregistrerHistorique) {
+            enregistrerDansHistorique(info.codeFabricant ?: "?", info.couleurHex ?: "")
+            sauvegarderDumpAuto(dernierDumpTexte)
+        }
+    }
+
+    /**
+     * Sauvegarde automatique du dump complet de CHAQUE lecture reussie (ajoute le 09/10/2026 a la
+     * demande de Tomyn), dans un sous-dossier horodate - independant du bouton "Exporter le
+     * dernier dump" (qui ecrase a chaque fois et exige un clic). But : ne plus perdre un dump
+     * faute d'avoir pense a l'exporter avant de scanner autre chose (deja arrive avec pascal_lb,
+     * ou on a du lui redemander un export apres coup). Silencieux : aucune erreur affichee si
+     * l'ecriture echoue, exactement comme enregistrerDansHistorique juste au-dessus.
+     */
+    private fun sauvegarderDumpAuto(dumpTexte: String) {
+        try {
+            val dossier = File(getExternalFilesDir(null), "dumps_auto")
+            if (!dossier.exists()) dossier.mkdirs()
+            val nomFichier = "dump_elegoo_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(Date()) + ".txt"
+            File(dossier, nomFichier).writeText(dumpTexte)
+        } catch (e: Exception) { /* pas grave si la sauvegarde automatique echoue */ }
     }
 
     private fun vibrerConfirmation() {
@@ -1104,11 +1124,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun ajouterEtiquetteAPlanche() {
         val info = dernierInfoBobine
-        if (info == null) {
+        val dump = dernierDumpBrut
+        if (info == null || dump == null) {
             Toast.makeText(this, "Scanne d'abord une bobine Elegoo avant d'ajouter une étiquette.", Toast.LENGTH_SHORT).show()
             return
         }
-        PlancheEtiquettes.ajouter(this, info)
+        PlancheEtiquettes.ajouter(this, info, dump)
         actualiserBoutonPlanche()
         Toast.makeText(this, "Étiquette ajoutée à la planche.", Toast.LENGTH_SHORT).show()
     }

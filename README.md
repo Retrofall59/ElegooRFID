@@ -45,7 +45,8 @@ compatibilité, gestion du NFC désactivé, réglage de la vibration, **impressi
 personnalisé** (v0.17, formulaire complet sans passer par un éditeur externe - voir
 `EncodeurElegoo.kt`), **clonage par lot** (v0.17, plusieurs dumps → plusieurs tags à la suite) et
 **avertissement préventif** si un verrou est détecté avant un effacement (v0.17, imparfait - voir
-le CHANGELOG).
+le CHANGELOG), **sauvegarde automatique** de chaque dump lu, **QR code de reclonage** sur les
+étiquettes et **mode sombre** (v0.18).
 
 **Importer un dump pour cloner (v0.7, élargi en v0.9)** : jusqu'à présent le clonage exigeait
 d'avoir la bobine source physiquement en main au moment de l'écriture. Le bouton "Importer un

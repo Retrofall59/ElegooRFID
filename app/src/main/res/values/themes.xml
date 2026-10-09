@@ -1,5 +1,5 @@
 <resources>
-    <style name="Theme.ElegooRFID" parent="Theme.AppCompat.NoActionBar">
+    <style name="Theme.ElegooRFID" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="colorPrimary">@color/elegoo_vert</item>
         <item name="android:windowBackground">@color/fond_clair</item>
     </style>

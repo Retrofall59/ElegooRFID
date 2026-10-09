@@ -6,6 +6,11 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.pdf.PdfDocument
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.EncodeHintType
+import com.google.zxing.WriterException
+import com.google.zxing.qrcode.QRCodeWriter
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import java.io.File
 import java.io.IOException
 
@@ -49,7 +54,11 @@ object PlancheEtiquettes {
         val diametreMm: Double?,
         val tempMinC: Int?,
         val tempMaxC: Int?,
-        val dateAffichee: String?
+        val dateAffichee: String?,
+        // Dump brut (pages 0x00-0x27) en hexa, pour le QR code de reclonage - voir dessinerQr.
+        // Null si le dump source etait trop court (improbable, le bouton "Ajouter a la planche"
+        // n'est propose qu'apres une lecture/creation reussie, qui couvre toujours cette plage).
+        val dumpHex: String?
     )
 
     private fun fichier(context: Context): File = File(context.getExternalFilesDir(null), NOM_FICHIER)
@@ -63,7 +72,8 @@ object PlancheEtiquettes {
         e.diametreMm?.toString() ?: "",
         e.tempMinC?.toString() ?: "",
         e.tempMaxC?.toString() ?: "",
-        e.dateAffichee ?: ""
+        e.dateAffichee ?: "",
+        e.dumpHex ?: ""
     ).joinToString(SEPARATEUR)
 
     private fun depuisLigne(ligne: String): Etiquette? {
@@ -77,11 +87,15 @@ object PlancheEtiquettes {
             diametreMm = champs[4].toDoubleOrNull(),
             tempMinC = champs[5].toIntOrNull(),
             tempMaxC = champs[6].toIntOrNull(),
-            dateAffichee = champs[7].ifBlank { null }
+            dateAffichee = champs[7].ifBlank { null },
+            // getOrNull : les lignes ecrites par une version anterieure a l'ajout du QR (v0.17 et
+            // avant) n'ont que 8 champs - pas de plantage, juste pas de QR sur ces etiquettes-la.
+            dumpHex = champs.getOrNull(8)?.ifBlank { null }
         )
     }
 
-    fun ajouter(context: Context, info: DecodeurElegoo.InfoBobine) {
+    /** @param dump dump brut de la bobine (voir DecodeurElegoo/EncodeurElegoo) - sert a coder le QR de reclonage. */
+    fun ajouter(context: Context, info: DecodeurElegoo.InfoBobine, dump: ByteArray) {
         val etiquette = Etiquette(
             matiereTexte = info.matiereTexte,
             sousTypeTexte = info.sousTypeTexte,
@@ -90,7 +104,10 @@ object PlancheEtiquettes {
             diametreMm = info.diametreMm,
             tempMinC = info.tempMinC,
             tempMaxC = info.tempMaxC,
-            dateAffichee = info.dateFabricationTexte
+            dateAffichee = info.dateFabricationTexte,
+            dumpHex = if (dump.size >= ClonageElegoo.TAILLE_MIN_DUMP_SOURCE) {
+                dump.copyOfRange(0, ClonageElegoo.TAILLE_MIN_DUMP_SOURCE).joinToString("") { "%02X".format(it) }
+            } else null
         )
         try {
             fichier(context).appendText(versLigne(etiquette) + "\n")
@@ -184,6 +201,15 @@ object PlancheEtiquettes {
         val rembourrage = 6f
         canvas.drawRect(x, y, x + largeur, y + hauteur, cadre)
 
+        // QR de reclonage (ajoute le 09/10/2026) en haut a droite - voir dessinerQr. Le texte et
+        // la pastille de couleur (en haut a gauche) se partagent le reste de la largeur.
+        val tailleQr = minOf(hauteur - 2 * rembourrage, 56f)
+        if (e.dumpHex != null) {
+            val xQr = x + largeur - rembourrage - tailleQr
+            val yQr = y + rembourrage
+            dessinerQr(canvas, e.dumpHex, xQr, yQr, tailleQr)
+        }
+
         // Pastille de couleur a gauche, infos texte a droite.
         val tailleAide = hauteur - 2 * rembourrage
         val tailleCouleur = minOf(tailleAide, 22f)
@@ -212,6 +238,42 @@ object PlancheEtiquettes {
             yTexte += 10f
             if (yTexte > y + hauteur - rembourrage) break
             canvas.drawText(ligneTexte, xTexte, yTexte, texte)
+        }
+    }
+
+    /**
+     * Dessine un QR code codant le dump complet (hexa) directement sur le Canvas, module par
+     * module (pas de Bitmap intermediaire) - permet de rescanner l'etiquette papier plus tard
+     * pour recloner sans retrouver le fichier d'origine (le contenu du QR est exactement le texte
+     * qu'accepte deja "Importer un dump pour cloner", voir extraireDumpDepuisImport).
+     *
+     * NON TESTE avec un vrai lecteur/imprimante (pas de scanner QR ni d'imprimante disponibles
+     * ici) : la densite du QR a cette taille (56pt, ~0.78cm) pour 320 caracteres hexa peut etre
+     * fine a lire pour un appareil photo de telephone selon la qualite d'impression - a verifier
+     * en vrai, et a agrandir dans PlancheEtiquettes si ca scanne mal.
+     *
+     * @return false si le QR n'a pas pu etre genere (contenu trop long, erreur zxing) - l'appelant
+     *         recupere alors toute la largeur de la cellule pour le texte.
+     */
+    private fun dessinerQr(canvas: Canvas, contenu: String, x: Float, y: Float, taille: Float): Boolean {
+        return try {
+            val hints = mapOf(
+                EncodeHintType.MARGIN to 0,
+                EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.L
+            )
+            val matrice = QRCodeWriter().encode(contenu, BarcodeFormat.QR_CODE, 0, 0, hints)
+            val module = taille / matrice.width
+            val peintureQr = Paint().apply { style = Paint.Style.FILL; color = Color.BLACK }
+            for (ty in 0 until matrice.height) {
+                for (tx in 0 until matrice.width) {
+                    if (matrice.get(tx, ty)) {
+                        canvas.drawRect(x + tx * module, y + ty * module, x + (tx + 1) * module, y + (ty + 1) * module, peintureQr)
+                    }
+                }
+            }
+            true
+        } catch (ex: WriterException) {
+            false
         }
     }
 }

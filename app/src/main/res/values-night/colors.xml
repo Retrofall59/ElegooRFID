@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Palette sombre (ajoutee le 09/10/2026 a la demande de Tomyn) - meme noms de couleurs que
+    values/colors.xml, valeurs differentes : suit automatiquement le reglage systeme "theme sombre"
+    (active via le theme DayNight dans themes.xml), aucun code ni layout a toucher puisque tout
+    reference deja ces couleurs par leur nom.
+
+    elegoo_noir et elegoo_vert restent INCHANGEES ici expres : elles servent de couleurs de marque
+    dans des degrades decoratifs (fond_bouton_principal, barre_accent) qui ont deja l'air bien en
+    sombre tels quels. Le texte des boutons secondaires utilise texte_principal (pas elegoo_noir)
+    depuis ce changement, justement pour pouvoir varier independamment de la marque.
+-->
+<resources>
+    <color name="fond_clair">#121212</color>
+    <color name="carte_blanc">#1E1E1E</color>
+    <color name="texte_principal">#F0F0F0</color>
+    <color name="texte_secondaire">#B0B0B0</color>
+    <color name="bordure_legere">#3A3A3A</color>
+</resources>

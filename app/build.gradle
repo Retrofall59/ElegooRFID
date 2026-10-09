@@ -20,8 +20,8 @@ android {
         applicationId "com.tomyn.elegoorfid"
         minSdk 26
         targetSdk 34
-        versionCode 17
-        versionName "0.17-creation-lot-prevention"
+        versionCode 19
+        versionName "0.19-fix-xml-creation-tag"
     }
 
     buildTypes {
@@ -46,4 +46,8 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'androidx.cardview:cardview:1.0.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    // QR code sur les etiquettes (v0.18, PlancheEtiquettes.kt) - pure Java, aucune dependance
+    // Android supplementaire, juste la matrice de modules (QRCodeWriter + BitMatrix), dessinee a
+    // la main avec le Canvas/Paint deja utilises pour le reste de l'etiquette.
+    implementation 'com.google.zxing:core:3.5.3'
 }

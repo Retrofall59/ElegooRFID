@@ -1,5 +1,62 @@
 # Changelog
 
+## v0.19-fix-xml-creation-tag (build 19)
+
+**Correctif d'un vrai bug de compilation signalé par Damdam2959** (build GitHub Actions, log
+fourni, testé deux fois avec la même erreur) :
+
+```
+[Fatal Error] activity_creation_tag.xml:46:76: Element type "TextView" must be followed by
+either attribute specifications, ">" or "/>".
+> Task :app:packageDebugResources FAILED
+```
+
+**Cause** : dans `activity_creation_tag.xml` (ajouté en v0.17), l'attribut `android:text` du
+texte d'intro contenait des guillemets échappés à la façon Kotlin - `\"Créer le tag\"` - au lieu
+de l'entité XML `&quot;`. Le backslash n'a aucun sens en XML : le parseur termine la valeur de
+l'attribut au premier guillemet littéral (juste avant "Créer"), puis essaie d'interpréter la
+suite comme une nouvelle balise, d'où l'erreur "Element type must be followed by attribute
+specifications" exactement à la position signalée. Corrigé en remplaçant par `&quot;...&quot;`.
+
+**Ce qui n'allait pas dans ma vérification, pour que ça n'arrive plus** : les CHANGELOG v0.17 et
+v0.18 annonçaient "vérifié par compilation réelle, zéro erreur" - c'était vrai seulement pour les
+fichiers `.kt` (compilés avec `kotlinc` contre des stubs Android). Cette vérification ne passait
+jamais les fichiers `.xml` (layouts) dans un vrai parseur XML, donc une erreur de syntaxe XML
+pourtant immédiatement fatale à la compilation réelle est passée inaperçue dans deux versions
+d'affilée. Les 21 fichiers XML du projet sont maintenant tous validés avec un vrai parseur XML
+(`xml.dom.minidom`) en plus de la compilation Kotlin, et c'est désormais systématique avant
+d'annoncer une version "vérifiée".
+
+## v0.18-sombre-qr-autosave (build 18)
+
+Trois idées supplémentaires de Claude, validées par Damdam2959 :
+
+**1. Sauvegarde automatique de chaque dump lu** (`MainActivity.sauvegarderDumpAuto`) : chaque
+lecture réussie (pas les créations manuelles) écrit maintenant son dump complet dans
+`dumps_auto/dump_elegoo_<horodatage>.txt`, sans action requise. Complète le bouton "Exporter le
+dernier dump" (qui écrase à chaque fois et exige un clic) - but : ne plus jamais perdre un dump
+faute d'avoir pensé à l'exporter avant de scanner autre chose (déjà arrivé avec pascal_lb, où on a
+dû lui redemander un export après coup).
+
+**2. QR code de reclonage sur les étiquettes** (`PlancheEtiquettes.kt`, dépendance
+`com.google.zxing:core:3.5.3`) : chaque étiquette de la planche (v0.15) porte maintenant un QR
+codant le dump complet en hexa - exactement le format accepté par "Importer un dump pour cloner".
+Rescanner l'étiquette imprimée permet donc de recloner sans retrouver le fichier d'origine.
+**Non testé avec un vrai lecteur QR ni une vraie imprimante** (aucun des deux disponibles ici) : à
+56pt pour 320 caractères hexa, la densité peut être limite pour un appareil photo de téléphone
+selon la qualité d'impression - voir le commentaire dans `dessinerQr`, à agrandir si ça scanne mal
+en pratique.
+
+**3. Mode sombre** (`values-night/colors.xml`, thème basculé vers `Theme.AppCompat.DayNight`) :
+suit le réglage système, sans toucher au code ni aux layouts (tout référençait déjà les couleurs
+par leur nom). Seul changement de layout nécessaire : le texte des boutons secondaires utilisait la
+couleur de marque `elegoo_noir` (fixe, pour les dégradés) au lieu de `texte_principal` (qui doit
+varier) - corrigé pour que le texte reste lisible en mode sombre.
+
+Vérifié par compilation réelle (kotlinc + stubs zxing ajoutés) et par les tests unitaires existants
+(zéro régression). Non testé visuellement (rendu du mode sombre, lisibilité du QR imprimé) - à
+valider par Damdam2959.
+
 ## v0.17-creation-lot-prevention (build 17)
 
 Trois améliorations demandées par Damdam2959, une fois l'app jugée "mature" :
