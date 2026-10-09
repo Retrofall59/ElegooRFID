@@ -14,6 +14,8 @@ import android.os.Build
 import android.os.Bundle
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.print.PrintAttributes
+import android.print.PrintManager
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
@@ -1144,15 +1146,24 @@ class MainActivity : AppCompatActivity() {
                 .show()
             return
         }
-        val nbPages = (etiquettes.size + PlancheEtiquettes.ETIQUETTES_PAR_PAGE - 1) / PlancheEtiquettes.ETIQUETTES_PAR_PAGE
+        val nbPages = PlancheEtiquettes.nombrePages(etiquettes)
+        // setItems plutot que les 3 emplacements de boutons habituels (positif/neutre/negatif) :
+        // ca permet d'ajouter "Imprimer" (v0.20) sans retirer "Générer le PDF" ni "Vider la
+        // planche" - AlertDialog ne propose que 3 boutons fixes, setItems n'a pas cette limite.
+        val options = arrayOf("Imprimer", "Générer le PDF", "Vider la planche")
         AlertDialog.Builder(this)
             .setTitle("Planche d'étiquettes (${etiquettes.size})")
             .setMessage("$nbPages page(s) A4 de ${PlancheEtiquettes.ETIQUETTES_PAR_PAGE} étiquettes chacune.")
-            .setPositiveButton("Générer le PDF") { _, _ -> exporterPlanchePdf() }
-            .setNeutralButton("Vider la planche") { _, _ ->
-                PlancheEtiquettes.vider(this)
-                actualiserBoutonPlanche()
-                Toast.makeText(this, "Planche vidée.", Toast.LENGTH_SHORT).show()
+            .setItems(options) { _, index ->
+                when (index) {
+                    0 -> imprimerPlanche(etiquettes)
+                    1 -> exporterPlanchePdf()
+                    2 -> {
+                        PlancheEtiquettes.vider(this)
+                        actualiserBoutonPlanche()
+                        Toast.makeText(this, "Planche vidée.", Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
             .setNegativeButton("Fermer", null)
             .show()
@@ -1169,6 +1180,24 @@ class MainActivity : AppCompatActivity() {
             startActivityForResult(intent, CODE_EXPORT_PLANCHE)
         } catch (e: Exception) {
             Toast.makeText(this, "Impossible d'ouvrir le sélecteur de fichiers : ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /**
+     * Impression directe via la fenetre d'impression Android (ajoute en v0.20 a la demande de
+     * Tomyn, en plus du PDF : "ouvre la fenêtre d'impression Android pour imprimer sur une
+     * imprimante Wi-Fi directement"). PrintManager.print() ouvre la fenetre systeme standard, qui
+     * liste elle-meme les imprimantes Wi-Fi/reseau deja configurees (plugin du fabricant, ou
+     * Mopria/service d'impression par defaut) - voir ImpressionPlanche.kt pour le detail de
+     * l'adaptateur qui fournit le PDF a cette fenetre.
+     */
+    private fun imprimerPlanche(etiquettes: List<PlancheEtiquettes.Etiquette>) {
+        try {
+            val gestionnaireImpression = getSystemService(Context.PRINT_SERVICE) as PrintManager
+            val nomTache = "Étiquettes Elegoo " + SimpleDateFormat("dd-MM-yyyy HH:mm", Locale.FRANCE).format(Date())
+            gestionnaireImpression.print(nomTache, ImpressionPlanche(etiquettes), PrintAttributes.Builder().build())
+        } catch (e: Exception) {
+            Toast.makeText(this, "Impossible d'ouvrir l'impression : ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 

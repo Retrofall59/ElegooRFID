@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.20-impression-directe (build 20)
+
+**Impression directe demandée par Damdam2959** : générer le PDF puis devoir aller le chercher
+dans une appli séparée pour l'imprimer était jugé trop lourd. Le menu "Planche d'étiquettes"
+propose maintenant une option **"Imprimer"** en plus de "Générer le PDF" et "Vider la planche" -
+elle ouvre directement la fenêtre d'impression standard d'Android (`PrintManager`/`PrintManager`),
+qui liste elle-même toutes les imprimantes Wi-Fi/réseau déjà configurées sur le téléphone (service
+du fabricant, ou Mopria/service d'impression par défaut) : aucune config réseau ni modèle
+d'imprimante à gérer côté appli, c'est le travail du framework d'impression Android.
+
+Implémentation (`ImpressionPlanche.kt`, nouveau) : un `PrintDocumentAdapter` qui réutilise tel
+quel `PlancheEtiquettes.genererPdf()` (même mise en page, même grille 3×8) - `onLayout` annonce le
+nombre de pages, `onWrite` génère le PDF à cet instant et l'écrit sur le descripteur fourni par le
+système. Le PDF exporté en fichier (bouton existant) et le PDF imprimé partagent donc exactement
+le même code de mise en page - un seul endroit à ajuster si Tomyn passe un jour à une planche de
+références précises.
+
+Vérifié par compilation réelle (kotlinc, nouveaux stubs `android.print.*`) **et** par un passage
+de tous les fichiers `.xml` du projet dans un vrai parseur XML (voir v0.19) - aucun fichier layout
+touché cette fois, donc rien de neuf à signaler côté XML. Tests unitaires existants (décodeur) :
+zéro régression (aucune logique de décodage/encodage touchée). **Non testé avec une vraie
+imprimante Wi-Fi** (aucune disponible ici) - la fenêtre d'impression Android elle-même est un
+composant système standard, donc le point à vérifier en pratique est seulement que l'imprimante
+de Tomyn apparaît bien dans cette liste (dépend de son propre support réseau/Mopria, pas de cette
+appli).
+
 ## v0.19-fix-xml-creation-tag (build 19)
 
 **Correctif d'un vrai bug de compilation signalé par Damdam2959** (build GitHub Actions, log

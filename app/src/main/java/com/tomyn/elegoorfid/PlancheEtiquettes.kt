@@ -122,6 +122,13 @@ object PlancheEtiquettes {
 
     fun nombre(context: Context): Int = lister(context).size
 
+    /** Nombre de pages A4 que produira genererPdf() pour cette liste (jamais 0 : une planche vide
+     * genere quand meme une page, voir genererPdf). Utilise par l'impression directe (voir
+     * ImpressionPlanche.kt) pour annoncer le nombre de pages a l'imprimante avant meme d'avoir
+     * genere le PDF. */
+    fun nombrePages(etiquettes: List<Etiquette>): Int =
+        if (etiquettes.isEmpty()) 1 else (etiquettes.size + ETIQUETTES_PAR_PAGE - 1) / ETIQUETTES_PAR_PAGE
+
     fun vider(context: Context) {
         try { fichier(context).delete() } catch (e: IOException) { /* rien a faire */ }
     }
