@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.31-fix-libelles-gammes (build 31)
+
+Correction d'un bug remonté par Damdam2959 en testant la v0.30 (capture d'écran à l'appui) : dans
+le menu déroulant "Gamme" de l'import de base de données, la plupart des gammes s'affichaient comme
+"..." indiscernables les uns des autres. Cause : la grande majorité des fichiers JSON ont un patron
+`"name"` qui vaut EXACTEMENT `"{color_name}"` (rien d'autre autour) - une fois la couleur retirée
+pour l'aperçu de gamme, il ne restait plus rien à afficher. `FilamentDatabase.nomGammeAffiche`
+utilise maintenant la matière en repli (`"{color_name}"` + PLA → `"PLA"`), et l'ajoute entre
+parenthèses quand le patron a un vrai nom qui ne la mentionne pas déjà (`"Silk {color_name}"` + PLA
+→ `"Silk (PLA)"`, `"DuraPro - {color_name}"` + ABS → `"DuraPro (ABS)"`). Testé en régression sur le
+fichier 3DJAKE (celui de la capture d'écran) dans `tests/TestFilamentDatabase.kt`.
+
 ## v0.30-import-base-filaments (build 30)
 
 Nouvel écran "Importer depuis une base de données" (`ImportBaseDonneesActivity.kt`, nouveau bouton

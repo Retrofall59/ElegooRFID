@@ -111,7 +111,25 @@ object FilamentDatabase {
     fun nomAffiche(filament: Filament, couleur: Couleur): String =
         filament.nomTemplate.replace("{color_name}", couleur.nom).trim()
 
-    /** Nom de gamme affichable dans le menu deroulant, sans couleur (pour le patron lui-meme). */
-    fun nomGammeAffiche(filament: Filament): String =
-        filament.nomTemplate.replace("{color_name}", "…").trim().ifEmpty { filament.materiauJson }
+    /**
+     * Nom de gamme affichable dans le menu deroulant, sans couleur precise. Corrige le 09/10/2026
+     * (bug remonte par Damdam2959, capture d'ecran a l'appui) : la grande majorite des fichiers
+     * JSON ont un patron "name" qui est EXACTEMENT "{color_name}" (rien d'autre) - le remplacer
+     * par "…" donnait un menu deroulant rempli de "..." indiscernables les uns des autres. On
+     * utilise maintenant la matiere comme repli, et on l'ajoute entre parentheses chaque fois que
+     * le patron ne la mentionne pas deja (ex. "Silk {color_name}" + materiau "PLA" -> "Silk
+     * (PLA)", "{color_name}" + "PLA" -> "PLA", "DuraPro - {color_name}" + "ABS" -> "DuraPro
+     * (ABS)").
+     */
+    fun nomGammeAffiche(filament: Filament): String {
+        val motif = filament.nomTemplate
+            .replace("{color_name}", "")
+            .trim(' ', '-', '|', '/')
+            .replace(Regex("\\s+"), " ")
+        return when {
+            motif.isEmpty() -> filament.materiauJson
+            motif.contains(filament.materiauJson, ignoreCase = true) -> motif
+            else -> "$motif (${filament.materiauJson})"
+        }
+    }
 }

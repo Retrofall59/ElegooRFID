@@ -101,7 +101,17 @@ fun main() {
     val filamentTest = FilamentDatabase.Filament("Silk {color_name}", "PLA", 1000, 1.75, 220, 220, emptyList())
     val couleurTest = FilamentDatabase.Couleur("Gold", "D5983E", false)
     check("nomAffiche substitue correctement", FilamentDatabase.nomAffiche(filamentTest, couleurTest) == "Silk Gold")
-    check("nomGammeAffiche sans couleur precise", FilamentDatabase.nomGammeAffiche(filamentTest) == "Silk …")
+    check("nomGammeAffiche sans couleur precise", FilamentDatabase.nomGammeAffiche(filamentTest) == "Silk (PLA)", FilamentDatabase.nomGammeAffiche(filamentTest))
+
+    // ----- 3djake.json : regression du bug remonte par Damdam2959 (capture d'ecran) - patron
+    // "{color_name}" seul (rien d'autre) pour la plupart des gammes, qui donnait un menu
+    // deroulant rempli de "..." indiscernables avant la correction de nomGammeAffiche. -----
+    val troisDJake = FilamentDatabase.analyser(File("json_samples/3djake.json").readText())
+    check("3djake : fabricant reconnu", troisDJake?.nom == "3DJAKE", troisDJake?.nom ?: "null")
+    val libellesGammes3djake = troisDJake?.filaments?.map { FilamentDatabase.nomGammeAffiche(it) } ?: emptyList()
+    check("3djake : aucun libelle de gamme vide ou reduit a des points", libellesGammes3djake.none { it.isBlank() || it.all { c -> c == '…' || c == '.' } }, libellesGammes3djake.toString())
+    check("3djake : gamme ASA -> 'ASA'", libellesGammes3djake.contains("ASA"), libellesGammes3djake.toString())
+    check("3djake : gamme Silk -> 'Silk (PLA)'", libellesGammes3djake.contains("Silk (PLA)"), libellesGammes3djake.toString())
 
     // ----- fichier non-JSON / sans les bons champs -----
     check("analyser(JSON invalide) -> null", FilamentDatabase.analyser("{ ceci n'est pas du json") == null)
