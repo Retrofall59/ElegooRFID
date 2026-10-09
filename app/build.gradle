@@ -20,8 +20,8 @@ android {
         applicationId "com.tomyn.elegoorfid"
         minSdk 26
         targetSdk 34
-        versionCode 33
-        versionName "0.33-nom-couleur"
+        versionCode 34
+        versionName "0.34-fix-qr-etiquette"
     }
 
     buildTypes {

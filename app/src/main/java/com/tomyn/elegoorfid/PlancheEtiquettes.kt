@@ -249,11 +249,14 @@ object PlancheEtiquettes {
         val rembourrage = 6f
         canvas.drawRect(x, y, x + largeur, y + hauteur, cadre)
 
-        // QR de reclonage (ajoute le 09/10/2026) en haut a droite - voir dessinerQr. Le texte et
-        // la pastille de couleur (en haut a gauche) se partagent le reste de la largeur.
-        val tailleQr = minOf(hauteur - 2 * rembourrage, 56f)
+        // QR de reclonage (ajoute le 09/10/2026) en haut a droite - voir dessinerQr. Agrandi le
+        // 09/10/2026 (bug remonte par Damdam2959 : le QR imprime ne scannait pas du tout) - voir
+        // le commentaire de dessinerQr pour le detail des deux causes identifiees. Le texte et la
+        // pastille de couleur (en haut a gauche) se partagent le reste de la largeur.
+        val tailleQr = minOf(hauteur - 2 * rembourrage, 80f)
+        var xQr = x + largeur - rembourrage
         if (e.dumpHex != null) {
-            val xQr = x + largeur - rembourrage - tailleQr
+            xQr = x + largeur - rembourrage - tailleQr
             val yQr = y + rembourrage
             dessinerQr(canvas, lienQrPourDump(e.dumpHex), xQr, yQr, tailleQr)
         }
@@ -272,9 +275,16 @@ object PlancheEtiquettes {
             } catch (ex: IllegalArgumentException) { /* hex invalide : pas de pastille, le texte prend toute la largeur */ }
         }
 
+        // Largeur dispo pour le texte avant de mordre sur la zone du QR (quand il y en a un) -
+        // ajoute le 09/10/2026 en meme temps que l'agrandissement du QR ci-dessus : avec un QR
+        // plus grand, un nom de matiere/sous-type un peu long pouvait sinon passer EN DESSOUS du
+        // QR et le rendre illisible une fois imprime (aucun retour a la ligne/troncature avant
+        // cette version). Voir tronquerPourLargeur.
+        val largeurTexteDisponible = xQr - 4f - xTexte
+
         var yTexte = y + rembourrage + 9f
         val titreTexte = listOfNotNull(e.matiereTexte, e.sousTypeTexte).joinToString(" ").ifBlank { "Bobine" }
-        canvas.drawText(titreTexte, xTexte, yTexte, titre)
+        canvas.drawText(tronquerPourLargeur(titre, titreTexte, largeurTexteDisponible), xTexte, yTexte, titre)
 
         val lignesInfo = mutableListOf<String>()
         // Badge d'origine (v0.24) : seulement si ce n'est PAS un vrai scan NFC (cas largement
@@ -288,6 +298,10 @@ object PlancheEtiquettes {
             }
             lignesInfo.add(badge)
         }
+        // Nom de couleur approche (v0.33, meme palette que l'affichage a l'ecran - voir
+        // NomsCouleurs.kt) : sur l'etiquette imprimee, seul le hex etait visible (couleur de la
+        // pastille a part) - demande par Damdam2959 une fois le nom ajoute a l'ecran principal.
+        e.couleurHex?.let { NomsCouleurs.nomApproche(it) }?.let { lignesInfo.add(it) }
         if (e.poidsGrammes != null) lignesInfo.add("${e.poidsGrammes}g")
         if (e.diametreMm != null) lignesInfo.add("${e.diametreMm}mm")
         if (e.tempMinC != null && e.tempMaxC != null) lignesInfo.add("${e.tempMinC}-${e.tempMaxC}°C")
@@ -296,8 +310,20 @@ object PlancheEtiquettes {
         for (ligneTexte in lignesInfo) {
             yTexte += 10f
             if (yTexte > y + hauteur - rembourrage) break
-            canvas.drawText(ligneTexte, xTexte, yTexte, texte)
+            canvas.drawText(tronquerPourLargeur(texte, ligneTexte, largeurTexteDisponible), xTexte, yTexte, texte)
         }
+    }
+
+    /** Tronque "texte" avec une ellipse finale si besoin pour ne pas depasser "largeurMax" avec
+     * "peinture" - evite qu'une ligne trop longue ne passe par-dessus le QR a cote (voir
+     * dessinerEtiquette). Retourne le texte tel quel s'il tient deja. */
+    private fun tronquerPourLargeur(peinture: Paint, texte: String, largeurMax: Float): String {
+        if (largeurMax <= 0f || peinture.measureText(texte) <= largeurMax) return texte
+        var tronque = texte
+        while (tronque.isNotEmpty() && peinture.measureText("$tronque…") > largeurMax) {
+            tronque = tronque.dropLast(1)
+        }
+        return if (tronque.isEmpty()) "…" else "$tronque…"
     }
 
     /**
@@ -307,10 +333,25 @@ object PlancheEtiquettes {
      * tag est abime/illisible mais l'etiquette papier existe encore) - voir
      * MainActivity.traiterIntentEventuel pour la reception du lien et v0.21 dans le CHANGELOG.
      *
-     * NON TESTE avec une vraie imprimante (aucune disponible ici) : la densite du QR a cette
-     * taille (56pt, ~0.78cm) pour un lien d'environ 330 caracteres peut etre fine a lire pour un
-     * appareil photo de telephone selon la qualite d'impression - a verifier en vrai, et a
-     * agrandir dans PlancheEtiquettes si ca scanne mal.
+     * Corrige le 09/10/2026 : Damdam2959 a confirme sur une vraie impression que le QR ne
+     * scannait pas du tout avec l'appareil photo. Deux causes reelles, cumulatives :
+     * 1. `EncodeHintType.MARGIN to 0` supprimait la "quiet zone" (marge blanche) autour du QR que
+     *    la norme exige pour qu'un detecteur puisse l'accrocher - sans elle, beaucoup de lecteurs
+     *    (dont le detecteur QR d'un appareil photo de telephone) ne reconnaissent meme pas qu'il y
+     *    a un QR a cet endroit. Retire : zxing applique maintenant sa marge standard.
+     * 2. Le lien encode (~330 caracteres, dont le dump complet en hexa) force l'encodage en mode
+     *    "byte" (le moins dense) a cause du "elegoorfid://" en minuscules - a cette taille, les
+     *    modules devenaient trop petits pour rester nets a l'impression (environ 0.3mm avec
+     *    l'ancienne taille de 56pt). Le schema/hote du lien doivent rester en minuscules exactes
+     *    (`android:scheme="elegoorfid"`/`android:host="dump"` dans le manifeste, compares de
+     *    maniere sensible a la casse par le systeme pour proposer "Ouvrir avec ElegooRFID") - donc
+     *    pas d'optimisation possible sur l'encodage ici. A la place : le QR imprime est agrandi
+     *    (56pt -> 80pt, voir dessinerEtiquette) pour des modules nettement plus gros a densite
+     *    egale.
+     *
+     * Ces deux corrections devraient resoudre le probleme, mais restent NON reverifiees avec une
+     * vraie impression/scan (pas d'imprimante ni de tag disponibles ici) - a confirmer par
+     * Damdam2959 sur sa prochaine planche imprimee.
      *
      * @return false si le QR n'a pas pu etre genere (contenu trop long, erreur zxing) - l'appelant
      *         recupere alors toute la largeur de la cellule pour le texte.
@@ -318,7 +359,6 @@ object PlancheEtiquettes {
     private fun dessinerQr(canvas: Canvas, contenu: String, x: Float, y: Float, taille: Float): Boolean {
         return try {
             val hints = mapOf(
-                EncodeHintType.MARGIN to 0,
                 EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.L
             )
             val matrice = QRCodeWriter().encode(contenu, BarcodeFormat.QR_CODE, 0, 0, hints)

@@ -1,5 +1,41 @@
 # Changelog
 
+## v0.34-fix-qr-etiquette (build 34)
+
+Deux demandes de Damdam2959 après avoir testé la v0.33 avec une vraie impression :
+
+**1. Nom de couleur sur l'étiquette imprimée aussi** (`PlancheEtiquettes.dessinerEtiquette`) : la
+v0.33 avait ajouté le nom approché partout à l'écran, mais pas sur l'étiquette papier elle-même, où
+seul le hex (et la pastille de couleur) restait visible. Ajouté en dessous du titre, même palette
+(`NomsCouleurs.kt`).
+
+**2. Le QR de l'étiquette ne scannait pas du tout** avec l'appareil photo - confirmé par Damdam2959
+sur une vraie impression. Deux causes réelles identifiées dans `PlancheEtiquettes.dessinerQr`,
+cumulatives :
+- `EncodeHintType.MARGIN` était forcé à `0`, ce qui supprime la "quiet zone" (marge blanche) que la
+  norme QR exige autour du code - sans elle, beaucoup de détecteurs (dont celui des appareils
+  photo de téléphone) ne reconnaissent même pas qu'il y a un QR à cet endroit. Retiré : zxing
+  applique maintenant sa marge standard.
+- Le lien encodé (~330 caractères, dump complet en hexa) force un encodage QR en mode "byte" (le
+  moins dense) à cause du `elegoorfid://` en minuscules - obligatoire pour que "Ouvrir avec
+  ElegooRFID" continue à être proposé par les autres applis de scan (comparaison sensible à la
+  casse côté Android sur le schéma/l'hôte déclarés dans le manifeste, aucune optimisation
+  d'encodage possible sans casser ça). Modules du coup très petits (~0.3mm) pour la taille
+  imprimée d'avant. QR agrandi de 56pt à 80pt sur l'étiquette pour des modules nettement plus gros
+  à densité égale.
+
+Effet de bord traité au passage : avec un QR plus grand, un nom de matière/sous-type un peu long
+pouvait passer dessous et le rendre illisible une fois imprimé (aucune troncature avant cette
+version). Les lignes de texte de l'étiquette sont maintenant tronquées avec une ellipse si elles
+dépasseraient dans la zone du QR (`tronquerPourLargeur`, nouveau stub `Paint.measureText` pour la
+vérification locale par compilation).
+
+Vérifié par compilation réelle (zéro erreur) et par les trois suites de tests unitaires existantes
+(décodeur, base de données JSON, noms de couleurs - zéro régression, aucune n'exerce le dessin PDF
+lui-même). **Toujours pas vérifié avec une vraie impression/scan** (pas d'imprimante disponible
+ici) - les deux causes identifiées sont cohérentes avec un QR totalement indétectable, mais à
+confirmer par Damdam2959 sur sa prochaine planche imprimée.
+
 ## v0.33-nom-couleur (build 33)
 
 Nom de couleur approché affiché à côté du code hex ("Couleur : #106DD7 (Bleu roi)") partout où la
